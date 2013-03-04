@@ -132,19 +132,28 @@ module JiraMigration
   end
 
   class JiraUser < BaseJira
+    attr_accessor :jira_firstName, :jira_lastName, :jira_emailAddress
+      
     DEST_MODEL = User
     MAP = {}
+
+    def initialize(node)
+      super
+    end
+
     def retrieve
-      user = self.class::DEST_MODEL.find_by_login(self.red_login)
+      # Check mail address first, as it is more likely to match across systems
+      user = self.class::DEST_MODEL.find_by_mail(self.jira_emailAddress)
       if !user
-        user = self.class::DEST_MODEL.find_by_mail(self.jira_emailAddress)
+        user = self.class::DEST_MODEL.find_by_login(self.red_login)
       end
 
       return user
     end
+
     def migrate
       super
-      $MIGRATED_USERS_BY_NAME[self.jira_userName] = self.new_record
+      $MIGRATED_USERS_BY_NAME[self.jira_name] = self.new_record
     end
 
     # First Name, Last Name, E-mail, Password
@@ -159,17 +168,14 @@ module JiraMigration
       self.jira_emailAddress
     end
     def red_password
-      self.jira_userName
+      self.jira_name
     end
     def red_login
-      self.jira_userName
+      self.jira_name
     end
     def before_save(new_record)
       new_record.login = red_login
     end
-    #def red_username
-    #  self.jira_name
-    #end
   end
 
   class JiraComment < BaseJira
@@ -335,18 +341,53 @@ module JiraMigration
 
   def self.parse_users()
     users = []
-    #users = self.get_list_from_tag('/*/OSUser')
+
     # For users in Redmine we need:
     # First Name, Last Name, E-mail, Password
     # In Jira, the fullname and email are property (a little more hard to get)
+    #
+    # We need to parse the following XML elements:
+    # <OSUser id="123" name="john" passwordHash="asdf..."/>
+    #
+    # <OSPropertyEntry id="234" entityName="OSUser" entityId="123" propertyKey="fullName" type="5"/>
+    # <OSPropertyString id="234" values="John Smith"
+    #
+    # <OSPropertyEntry id="345" entityName="OSUser" entityId="123" propertyKey="email" type="5"/>
+    # <OSPropertyString id="345" value="john.smith@gmail.com"/>
 
-    $doc.elements.each('/entity-engine-xml/User') do |node|
+    $doc.elements.each('/*/OSUser') do |node|
       user = JiraUser.new(node)
+
+      # Set user names (first name, last name)
+      full_name = find_user_full_name(user.jira_id)
+      unless full_name.nil?
+        user.jira_firstName = full_name.split[0]
+        user.jira_lastName = full_name.split[-1]
+      end
+
+      # Set email address
+      user.jira_emailAddress = find_user_email_address(user.jira_id)
+
       users.push(user)
+      puts "Found JIRA user: #{user.jira_firstName} #{user.jira_lastName}, email=#{user.jira_emailAddress}, username=#{user.jira_name}"
     end
 
     return users
   end
+
+  def self.find_user_full_name(user_id)
+    self.find_user_property_string(user_id, 'fullName')
+  end
+
+  def self.find_user_email_address(user_id)
+    self.find_user_property_string(user_id, 'email')
+  end
+
+  def self.find_user_property_string(user_id, property_key)
+    property_id = $doc.elements["/*/OSPropertyEntry[@entityName='OSUser'][@entityId='#{user_id}'][@propertyKey='#{property_key}']"].attributes["id"]
+    $doc.elements["/*/OSPropertyString[@id='#{property_id}']"].attributes["value"]
+  end
+
 
   ISSUE_TYPE_MARKER = "(choose a Redmine Tracker)"
   DEFAULT_ISSUE_TYPE_MAP = {
