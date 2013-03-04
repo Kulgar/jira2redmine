@@ -15,6 +15,24 @@ module JiraMigration
   CONF_FILE = "map_jira_to_redmine.yml"
 
   $MIGRATED_USERS_BY_NAME = {} # Maps the Jira username to the Redmine Rails User object
+
+  def self.retrieve_or_create_ghost_user
+    ghost = User.find_by_login('deleted-user')
+    if ghost.nil?
+      ghost = User.new({  :firstname => 'Deleted', 
+                          :lastname => 'User',
+                          :mail => 'deleted.user@example.com',
+                          :password => 'deleteduser123' })
+      ghost.login = 'deleted-user'
+      ghost.lock # disable the user
+    end
+    ghost
+  end
+
+  # A dummy Redmine user to use in place of JIRA users who have been deleted.
+  # This user is lazily migrated only if needed.
+  $GHOST_USER = self.retrieve_or_create_ghost_user
+
   $MIGRATED_ISSUE_TYPES = {} 
   $MIGRATED_ISSUE_STATUS = {}
   $MIGRATED_ISSUE_PRIORITIES = {}
@@ -33,6 +51,27 @@ module JiraMigration
 
     return ret
   end
+
+  def self.use_ghost_user
+    # Migrate the ghost user, if we have not done so already
+    if $GHOST_USER.new_record?
+      puts "Creating ghost user to represent deleted JIRA users. Login name = #{$GHOST_USER.login}"
+      $GHOST_USER.save!
+      $GHOST_USER.reload
+    end
+    $GHOST_USER
+  end
+
+  def self.find_user_by_jira_name(jira_name)
+    user = $MIGRATED_USERS_BY_NAME[jira_name]
+    if user.nil?
+      # User has not been migrated. Probably a user who has been deleted from JIRA.
+      # Select or create the ghost user and use him instead.
+      user = use_ghost_user
+    end
+    user
+  end
+
   def self.get_list_from_tag(xpath_query)
     # Get a tag node and get all attributes as a hash
     ret = []
@@ -205,7 +244,7 @@ module JiraMigration
     end
     def red_user
       # retrieving the Rails object
-      $MIGRATED_USERS_BY_NAME[self.jira_author]
+      JiraMigration.find_user_by_jira_name(self.jira_author)
     end
     def red_journalized
       # retrieving the Rails object
@@ -270,10 +309,10 @@ module JiraMigration
       return $MIGRATED_ISSUE_TYPES[type_name]
     end
     def red_author
-      $MIGRATED_USERS_BY_NAME[self.jira_reporter]
+      JiraMigration.find_user_by_jira_name(self.jira_reporter)
     end
     def red_assigned_to
-      $MIGRATED_USERS_BY_NAME[self.jira_assignee]
+      JiraMigration.find_user_by_jira_name(self.jira_assignee)
     end
 
   end
@@ -310,7 +349,7 @@ module JiraMigration
       DateTime.parse(self.jira_created)
     end
     def red_author
-      $MIGRATED_USERS_BY_NAME[self.jira_author]
+      JiraMigration.find_user_by_jira_name(self.jira_assignee)
     end
     def red_container
       JiraIssue::MAP[self.jira_issue]
@@ -387,7 +426,6 @@ module JiraMigration
     property_id = $doc.elements["/*/OSPropertyEntry[@entityName='OSUser'][@entityId='#{user_id}'][@propertyKey='#{property_key}']"].attributes["id"]
     $doc.elements["/*/OSPropertyString[@id='#{property_id}']"].attributes["value"]
   end
-
 
   ISSUE_TYPE_MARKER = "(choose a Redmine Tracker)"
   DEFAULT_ISSUE_TYPE_MAP = {
