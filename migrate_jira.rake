@@ -1,6 +1,7 @@
 require 'rexml/document'
 require 'active_record'
 require 'yaml'
+require 'fileutils'
 require File.expand_path('../../../config/environment', __FILE__) # Assumes that migrate_jira.rake is in lib/tasks/
 
 
@@ -13,6 +14,8 @@ module JiraMigration
   $doc = doc
 
   CONF_FILE = "map_jira_to_redmine.yml"
+
+  JIRA_ATTACHMENTS_DIR = "jira_attachments"
 
   $MIGRATED_USERS_BY_NAME = {} # Maps the Jira username to the Redmine Rails User object
 
@@ -322,11 +325,34 @@ module JiraMigration
     MAP = {}
 
     def retrieve
-      self.class::DEST_MODEL.find_by_disk_filename(self.red_filename)
+      # Auto-generated filename contains a timestamp, so we cannot search for exact filename
+      filename_static_suffix = self.red_disk_filename.split('_')[-1]
+      self.class::DEST_MODEL.where("disk_filename LIKE '%_#{filename_static_suffix}'").first
     end
     def before_save(new_record)
       new_record.container = self.red_container
       pp(new_record)
+
+      # JIRA stores attachments as follows:
+      # <PROJECTKEY>/<ISSUE-KEY>/<ATTACHMENT_ID>_filename.ext
+      #
+      # We have to recreate this path in order to copy the file
+      issue = $doc.elements["/*/Issue[@id='#{self.jira_issue}']"]
+      issue_key = issue.attributes["key"]
+      project_id = issue.attributes["project"]
+      project_key = $doc.elements["/*/Project[@id='#{project_id}']"].attributes["key"]
+      jira_attachment_file = File.join(JIRA_ATTACHMENTS_DIR, 
+                                       project_key, 
+                                       issue_key, 
+                                       "#{self.jira_id}_#{self.jira_filename}")
+      if File.exists? jira_attachment_file 
+        redmine_attachment_file = File.join(Attachment.storage_path, new_record.disk_filename)
+
+        puts "Copying attachment [#{jira_attachment_file}] to [#{redmine_attachment_file}]"
+        FileUtils.cp jira_attachment_file, redmine_attachment_file
+      else
+        puts "Attachment file [#{jira_attachment_file}] not found. Skipping copy."
+      end
     end
 
     # here is the tranformation of Jira attributes in Redmine attribues
