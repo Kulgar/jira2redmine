@@ -17,7 +17,7 @@ module JiraMigration
 
   JIRA_ATTACHMENTS_DIR = "jira_attachments"
 
-  $MIGRATED_USERS_BY_NAME = {} # Maps the Jira username to the Redmine Rails User object
+  $MIGRATED_USERS_BY_NAME = Hash[User.all.map{|u|[u.login, u]}] #{} # Maps the Jira username to the Redmine Rails User object
 
   def self.retrieve_or_create_ghost_user
     ghost = User.find_by_login('deleted-user')
@@ -128,6 +128,7 @@ module JiraMigration
       if self.respond_to?("before_save")
         self.before_save(record)
       end
+
       record.save!
       record.reload
       self.map[self.jira_id] = record
@@ -174,7 +175,8 @@ module JiraMigration
   end
 
   class JiraUser < BaseJira
-    attr_accessor :jira_firstName, :jira_lastName, :jira_emailAddress, :jira_name
+    attr_accessor :jira_userKey
+
       
     DEST_MODEL = User
     MAP = {}
@@ -185,7 +187,7 @@ module JiraMigration
 
     def retrieve
       # Check mail address first, as it is more likely to match across systems
-      user = self.class::DEST_MODEL.find_by_mail(self.jira_emailAddress)
+      user = self.class::DEST_MODEL.find_by_mail(self.jira_userKey)
       if !user
         user = self.class::DEST_MODEL.find_by_login(self.jira_name)
       end
@@ -195,25 +197,25 @@ module JiraMigration
 
     def migrate
       super
-      $MIGRATED_USERS_BY_NAME[self.jira_name] = self.new_record
+      $MIGRATED_USERS_BY_NAME[self.jira_userKey] = self.new_record
     end
 
     # First Name, Last Name, E-mail, Password
     # here is the tranformation of Jira attributes in Redmine attribues
     def red_firstname()
-      self.jira_firstName
+      self.jira_userKey
     end
     def red_lastname
-      self.jira_lastName
+      self.jira_userKey
     end
     def red_mail
-      self.jira_emailAddress
+      "#{self.jira_userKey}@infiniteloop.eu"
     end
     def red_password
-      self.jira_password
+      self.jira_userKey
     end
     def red_login
-      self.jira_name
+      self.jira_userKey
     end
     def before_save(new_record)
       new_record.login = red_login
@@ -258,15 +260,19 @@ module JiraMigration
   class JiraIssue < BaseJira
     DEST_MODEL = Issue
     MAP = {}
-    #attr_reader :jira_id, :jira_key, :jira_project, :jira_reporter, 
-    #            :jira_type, :jira_summary, :jira_assignee, :jira_priority
-    #            :jira_resolution, :jira_status, :jira_created, :jira_resolutiondate
-    attr_reader  :jira_description
+    # attr_reader :jira_id, :jira_key, :jira_project, :jira_reporter,
+               # :jira_type, :jira_summary, :jira_assignee, :jira_priority,
+               # :jira_resolution, :jira_status, :jira_created, :jira_resolutiondate
+    attr_reader  :jira_description, :jira_reporter
 
 
     def initialize(node_tag)
       super
       @jira_description = @tag.elements["description"].text if @tag.elements["description"]
+      # require 'pry'
+      # binding.pry
+      # exit
+      @jira_reporter = node_tag.attribute('reporter').to_s
     end
     def jira_marker
       return "FROM JIRA: #{self.jira_key}\n"
@@ -375,7 +381,7 @@ module JiraMigration
       DateTime.parse(self.jira_created)
     end
     def red_author
-      JiraMigration.find_user_by_jira_name(self.jira_assignee)
+      JiraMigration.find_user_by_jira_name(self.jira_author)
     end
     def red_container
       JiraIssue::MAP[self.jira_issue]
@@ -409,22 +415,25 @@ module JiraMigration
 
     # For users in Redmine we need:
     # First Name, Last Name, E-mail, Password
-    #<User id="110" directoryId="1" userName="userName" lowerUserName="username" active="1" createdDate="2013-08-14 13:07:57.734" updatedDate="2013-09-29 21:52:19.776" firstName="firstName" lowerFirstName="firstname" lastName="lastName" lowerLastName="lastname" displayName="User Name" lowerDisplayName="user name" emailAddress="user@mail.org" lowerEmailAddress="user@mail.org" credential="" externalId=""/>
+    # In Jira, the fullname and email are property (a little more hard to get)
+    #
+    # We need to parse the following XML elements:
+    # <OSUser id="123" name="john" passwordHash="asdf..."/>
+    #
+    # <OSPropertyEntry id="234" entityName="OSUser" entityId="123" propertyKey="fullName" type="5"/>
+    # <OSPropertyString id="234" values="John Smith"
+    #
+    # <OSPropertyEntry id="345" entityName="OSUser" entityId="123" propertyKey="email" type="5"/>
+    # <OSPropertyString id="345" value="john.smith@gmail.com"/>
 
-    $doc.elements.each('/*/User') do |node|
+    $doc.elements.each('/*/ApplicationUser') do |node|
       user = JiraUser.new(node)
 
-      # Set user names (first name, last name)      
-      user.jira_firstName = node.attributes["firstName"]
-      user.jira_lastName = node.attributes["lastName"]
-      
       # Set email address
-      user.jira_emailAddress = node.attributes["emailAddress"]
-
-      user.jira_name = node.attributes["lowerUserName"]
+      user.jira_userKey = node.attribute('userKey').to_s
 
       users.push(user)
-      puts "Found JIRA user: #{user.jira_firstName} #{user.jira_lastName}, email=#{user.jira_emailAddress}, username=#{user.jira_name}"
+      puts "Found JIRA user: #{user.jira_userKey}"
     end
 
     return users
@@ -505,7 +514,8 @@ module JiraMigration
 
   def self.parse_issues()
     ret = []
-    $doc.elements.each('/*/Issue') do |node|
+
+    $doc.elements.collect('/*/Issue'){|i|i}.sort{|a,b|a.attribute('key').to_s<=>b.attribute('key').to_s}.each do |node|
       issue = JiraIssue.new(node)
       ret.push(issue)
     end
@@ -656,7 +666,12 @@ desc "Migrates Jira Users to Redmine Users"
     issues = JiraMigration.parse_issues()
     issues.each do |i|
       #pp(i)
+
       i.migrate
+      unless i.new_record.new_record?
+        i.new_record.update_attribute :created_on, i.run_all_redmine_fields['created_on']
+        i.new_record.update_attribute :updated_on, i.run_all_redmine_fields['updated_on']
+      end
     end
   end
 
@@ -666,6 +681,11 @@ desc "Migrates Jira Users to Redmine Users"
     comments.each do |c|
       #pp(c)
       c.migrate
+      unless c.new_record.new_record?
+        c.new_record.update_attributes({
+            created_on: c.run_all_redmine_fields['created_on']
+          })
+      end      
     end
   end
 
@@ -675,6 +695,12 @@ desc "Migrates Jira Users to Redmine Users"
     attachs.each do |a|
       #pp(c)
       a.migrate
+      p a
+      unless a.new_record.new_record?
+        a.new_record.update_attributes({
+            created_on: a.run_all_redmine_fields['created_on'],
+          })
+      end
     end
   end
 
