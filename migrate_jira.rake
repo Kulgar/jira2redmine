@@ -19,6 +19,19 @@ module JiraMigration
 
   $MIGRATED_USERS_BY_NAME = Hash[User.all.map{|u|[u.login, u]}] #{} # Maps the Jira username to the Redmine Rails User object
 
+  # those maps are for parsing attachments optimisation. My jira xml was huge ~7MB, and parsing it for each attachment lasted for ever. 
+  # Now needed data are parsed once and put into those maps, which makes all things much faster.
+  $MAP_ISSUE_TO_PROJECT_KEY = {}
+  $MAP_PROJECT_ID_TO_PROJECT_KEY = {}
+
+  $doc.elements.each("/*/Project") do |p|
+    $MAP_PROJECT_ID_TO_PROJECT_KEY[p.attributes['id']] = p.attributes['key']
+  end
+
+  $doc.elements.each("/*/Issue") do |i|
+    $MAP_ISSUE_TO_PROJECT_KEY[i.attributes["id"]] = { project_key: $MAP_PROJECT_ID_TO_PROJECT_KEY[i.attributes["project"]], issue_key: i.attributes['key']}
+  end
+
   def self.retrieve_or_create_ghost_user
     ghost = User.find_by_login('deleted-user')
     if ghost.nil?
@@ -269,9 +282,6 @@ module JiraMigration
     def initialize(node_tag)
       super
       @jira_description = @tag.elements["description"].text if @tag.elements["description"]
-      # require 'pry'
-      # binding.pry
-      # exit
       @jira_reporter = node_tag.attribute('reporter').to_s
     end
     def jira_marker
@@ -331,9 +341,7 @@ module JiraMigration
     MAP = {}
 
     def retrieve
-      # Auto-generated filename contains a timestamp, so we cannot search for exact filename
-      filename_static_suffix = self.red_disk_filename.split('_')[-1]
-      self.class::DEST_MODEL.where("disk_filename LIKE '%_#{filename_static_suffix}'").first
+      nil
     end
     def before_save(new_record)
       new_record.container = self.red_container
@@ -343,19 +351,20 @@ module JiraMigration
       # <PROJECTKEY>/<ISSUE-KEY>/<ATTACHMENT_ID>_filename.ext
       #
       # We have to recreate this path in order to copy the file
-      issue = $doc.elements["/*/Issue[@id='#{self.jira_issue}']"]
-      issue_key = issue.attributes["key"]
-      project_id = issue.attributes["project"]
-      project_key = $doc.elements["/*/Project[@id='#{project_id}']"].attributes["key"]
+      issue_key = $MAP_ISSUE_TO_PROJECT_KEY[self.jira_issue][:issue_key]
+      project_key = $MAP_ISSUE_TO_PROJECT_KEY[self.jira_issue][:project_key]
       jira_attachment_file = File.join(JIRA_ATTACHMENTS_DIR, 
                                        project_key, 
                                        issue_key, 
-                                       "#{self.jira_id}_#{self.jira_filename}")
+                                       "#{self.jira_id}")
+      puts "Jira Attachment File: #{jira_attachment_file}"
       if File.exists? jira_attachment_file 
-        redmine_attachment_file = File.join(Attachment.storage_path, new_record.disk_filename)
+        new_record.file = File.open(jira_attachment_file)
+        puts "Setting attachment #{jira_attachment_file} for record"
+        # redmine_attachment_file = File.join(Attachment.storage_path, new_record.disk_filename)
 
-        puts "Copying attachment [#{jira_attachment_file}] to [#{redmine_attachment_file}]"
-        FileUtils.cp jira_attachment_file, redmine_attachment_file
+        # puts "Copying attachment [#{jira_attachment_file}] to [#{redmine_attachment_file}]"
+        # FileUtils.cp jira_attachment_file, redmine_attachment_file
       else
         puts "Attachment file [#{jira_attachment_file}] not found. Skipping copy."
       end
@@ -367,15 +376,15 @@ module JiraMigration
     def red_filename
       self.jira_filename.gsub(/[^\w\.\-]/,'_')  # stole from Redmine: app/model/attachment (methods sanitize_filenanme)
     end
-    def red_disk_filename 
-      Attachment.disk_filename(self.jira_issue+self.jira_filename)
-    end
+    # def red_disk_filename 
+    #   Attachment.disk_filename(self.jira_issue+self.jira_filename)
+    # end
     def red_content_type 
       self.jira_mimetype.to_s.chomp
     end
-    def red_filesize 
-      self.jira_filesize
-    end
+    # def red_filesize 
+    #   self.jira_filesize
+    # end
 
     def red_created_on
       DateTime.parse(self.jira_created)
@@ -695,7 +704,7 @@ desc "Migrates Jira Users to Redmine Users"
     attachs.each do |a|
       #pp(c)
       a.migrate
-      p a
+
       unless a.new_record.new_record?
         a.new_record.update_attributes({
             created_on: a.run_all_redmine_fields['created_on'],
@@ -728,4 +737,11 @@ desc "Migrates Jira Users to Redmine Users"
     issues = JiraMigration.parse_issues()
     issues.each {|i| pp( i.run_all_redmine_fields) }
   end
+
+  desc "Just pretty print Jira Issues on screen"
+  task :test_parse_issue_types => :environment do
+    issues = JiraMigration.parse_issue()
+    issues.each {|i| pp( i.run_all_redmine_fields) }
+  end
+
 end
