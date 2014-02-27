@@ -174,7 +174,7 @@ module JiraMigration
   end
 
   class JiraUser < BaseJira
-    attr_accessor :jira_firstName, :jira_lastName, :jira_emailAddress
+    attr_accessor :jira_firstName, :jira_lastName, :jira_emailAddress, :jira_name
       
     DEST_MODEL = User
     MAP = {}
@@ -187,7 +187,7 @@ module JiraMigration
       # Check mail address first, as it is more likely to match across systems
       user = self.class::DEST_MODEL.find_by_mail(self.jira_emailAddress)
       if !user
-        user = self.class::DEST_MODEL.find_by_login(self.red_login)
+        user = self.class::DEST_MODEL.find_by_login(self.jira_name)
       end
 
       return user
@@ -210,7 +210,7 @@ module JiraMigration
       self.jira_emailAddress
     end
     def red_password
-      self.jira_name
+      self.jira_password
     end
     def red_login
       self.jira_name
@@ -404,53 +404,30 @@ module JiraMigration
     return projs
   end
 
-  def self.parse_users()
+  def self.parse_jira_users()
     users = []
 
     # For users in Redmine we need:
     # First Name, Last Name, E-mail, Password
-    # In Jira, the fullname and email are property (a little more hard to get)
-    #
-    # We need to parse the following XML elements:
-    # <OSUser id="123" name="john" passwordHash="asdf..."/>
-    #
-    # <OSPropertyEntry id="234" entityName="OSUser" entityId="123" propertyKey="fullName" type="5"/>
-    # <OSPropertyString id="234" values="John Smith"
-    #
-    # <OSPropertyEntry id="345" entityName="OSUser" entityId="123" propertyKey="email" type="5"/>
-    # <OSPropertyString id="345" value="john.smith@gmail.com"/>
+    #<User id="110" directoryId="1" userName="userName" lowerUserName="username" active="1" createdDate="2013-08-14 13:07:57.734" updatedDate="2013-09-29 21:52:19.776" firstName="firstName" lowerFirstName="firstname" lastName="lastName" lowerLastName="lastname" displayName="User Name" lowerDisplayName="user name" emailAddress="user@mail.org" lowerEmailAddress="user@mail.org" credential="" externalId=""/>
 
-    $doc.elements.each('/*/OSUser') do |node|
+    $doc.elements.each('/*/User') do |node|
       user = JiraUser.new(node)
 
-      # Set user names (first name, last name)
-      full_name = find_user_full_name(user.jira_id)
-      unless full_name.nil?
-        user.jira_firstName = full_name.split[0]
-        user.jira_lastName = full_name.split[-1]
-      end
-
+      # Set user names (first name, last name)      
+      user.jira_firstName = node.attributes["firstName"]
+      user.jira_lastName = node.attributes["lastName"]
+      
       # Set email address
-      user.jira_emailAddress = find_user_email_address(user.jira_id)
+      user.jira_emailAddress = node.attributes["emailAddress"]
+
+      user.jira_name = node.attributes["lowerUserName"]
 
       users.push(user)
       puts "Found JIRA user: #{user.jira_firstName} #{user.jira_lastName}, email=#{user.jira_emailAddress}, username=#{user.jira_name}"
     end
 
     return users
-  end
-
-  def self.find_user_full_name(user_id)
-    self.find_user_property_string(user_id, 'fullName')
-  end
-
-  def self.find_user_email_address(user_id)
-    self.find_user_property_string(user_id, 'email')
-  end
-
-  def self.find_user_property_string(user_id, property_key)
-    property_id = $doc.elements["/*/OSPropertyEntry[@entityName='OSUser'][@entityId='#{user_id}'][@propertyKey='#{property_key}']"].attributes["id"]
-    $doc.elements["/*/OSPropertyString[@id='#{property_id}']"].attributes["value"]
   end
 
   ISSUE_TYPE_MARKER = "(choose a Redmine Tracker)"
@@ -611,7 +588,7 @@ namespace :jira_migration do
 
 
   desc "Migrates Jira Issue Types to Redmine Trackes"
-  task :migrate_issue_types => [:environment, :pre_conf] do
+  task :migrate_issue_types => [:environment, :pre_conf,:migrate_users] do
 
     JiraMigration.get_jira_issue_types()
     types = $confs["types"]
@@ -660,15 +637,20 @@ namespace :jira_migration do
     end
   end
 
-  desc "Migrates Jira Users to Redmine Users"
+desc "Migrates Jira Users to Redmine Users"
   task :migrate_users => :environment do
-    users = JiraMigration.parse_users()
+    users = JiraMigration.parse_jira_users()
     users.each do |u|
       #pp(u)
-      u.migrate
+      user = User.find_by_mail(u.jira_emailAddress)
+      unless user.nil?  
+        u.migrate
+      end
     end
-  end
 
+    puts "Migrated Users"
+  end
+  
   desc "Migrates Jira Issues to Redmine Issues"
   task :migrate_issues => :environment do
     issues = JiraMigration.parse_issues()
