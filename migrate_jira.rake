@@ -248,7 +248,7 @@ module JiraMigration
     end
 
     def jira_marker
-      return "FROM JIRA: \"#{self.jira_id}\":https://infiniteloop.atlassian.net/browse/#{self.jira_id}\n"
+      return "FROM JIRA: #{self.jira_id}\n"
     end
     def retrieve
       Journal.first(:conditions => "notes LIKE '#{self.jira_marker}%'")
@@ -294,7 +294,7 @@ module JiraMigration
       @jira_reporter = node_tag.attribute('reporter').to_s
     end
     def jira_marker
-      return "FROM JIRA: \"#{self.jira_id}\":https://infiniteloop.atlassian.net/browse/#{self.jira_id}\n"
+      return "FROM JIRA: \"#{self.jira_key}\":https://infiniteloop.atlassian.net/browse/#{self.jira_key}\n"
     end
     def retrieve
       Issue.first(:conditions => "description LIKE '#{self.jira_marker}%'")
