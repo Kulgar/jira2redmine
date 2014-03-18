@@ -4,8 +4,6 @@ require 'yaml'
 require 'fileutils'
 require File.expand_path('../../../config/environment', __FILE__) # Assumes that migrate_jira.rake is in lib/tasks/
 
-
-
 module JiraMigration
   include REXML
 
@@ -151,6 +149,7 @@ module JiraMigration
       if self.respond_to?("post_migrate")
         self.post_migrate(record)
       end
+      record.reload
       return record 
     end
     def retrieve
@@ -270,6 +269,10 @@ module JiraMigration
       # retrieving the Rails object
       JiraIssue::MAP[self.jira_issue]
     end
+    def post_migrate(new_record)
+      new_record.update_column :created_on, Time.parse(self.jira_created)
+      new_record.reload
+    end
   end
 
   class JiraIssue < BaseJira
@@ -345,7 +348,13 @@ module JiraMigration
     def red_assigned_to
       JiraMigration.find_user_by_jira_name(self.jira_assignee)
     end
-
+    def post_migrate(new_record)
+      # require 'pry'
+      # binding.pry
+      new_record.update_column :updated_on, Time.parse(self.jira_updated)
+      new_record.update_column :created_on, Time.parse(self.jira_created)
+      new_record.reload
+    end
   end
 
   class JiraAttachment < BaseJira
@@ -406,6 +415,10 @@ module JiraMigration
     end
     def red_container
       JiraIssue::MAP[self.jira_issue]
+    end
+    def post_migrate(new_record)
+      new_record.update_column :created_on, Time.parse(self.jira_created)
+      new_record.reload
     end
   end
 
@@ -691,10 +704,6 @@ desc "Migrates Jira Users to Redmine Users"
       #pp(i)
 
       i.migrate
-      unless i.new_record.new_record?
-        i.new_record.update_attribute :created_on, i.run_all_redmine_fields['created_on']
-        i.new_record.update_attribute :updated_on, i.run_all_redmine_fields['updated_on']
-      end
     end
   end
 
@@ -704,12 +713,7 @@ desc "Migrates Jira Users to Redmine Users"
     comments.reject!{|comment|comment.red_journalized.nil?}
     comments.each do |c|
       #pp(c)
-      c.migrate
-      unless c.new_record.new_record?
-        c.new_record.update_attributes({
-            created_on: c.run_all_redmine_fields['created_on']
-          })
-      end      
+      c.migrate  
     end
   end
 
@@ -720,12 +724,6 @@ desc "Migrates Jira Users to Redmine Users"
     attachs.each do |a|
       #pp(c)
       a.migrate
-
-      unless a.new_record.new_record?
-        a.new_record.update_attributes({
-            created_on: a.run_all_redmine_fields['created_on'],
-          })
-      end
     end
   end
 
