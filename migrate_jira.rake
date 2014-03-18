@@ -2,7 +2,7 @@ require 'rexml/document'
 require 'active_record'
 require 'yaml'
 require 'fileutils'
-#require File.expand_path('../../../config/environment', __FILE__) # Assumes that migrate_jira.rake is in lib/tasks/
+require File.expand_path('../../../config/environment', __FILE__) # Assumes that migrate_jira.rake is in lib/tasks/
 
 
 
