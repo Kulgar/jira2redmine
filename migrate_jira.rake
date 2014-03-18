@@ -57,7 +57,7 @@ module JiraMigration
   $MIGRATED_ISSUE_STATUS_BY_ID = {}
   $MIGRATED_ISSUE_PRIORITIES_BY_ID = {}
 
-  $IGNORED_PROJECTS = ['Edumaster']
+  $IGNORED_PROJECTS = ['Edumaster', 'Demonstration']
 
   def self.get_all_options()
     # return all options 
@@ -283,7 +283,11 @@ module JiraMigration
 
     def initialize(node_tag)
       super
-      @jira_description = @tag.elements["description"].text if @tag.elements["description"]
+      if @tag.elements["description"]
+        @jira_description = @tag.elements["description"].text
+      elsif @tag.attributes['description']
+        @jira_description = @tag.attributes["description"]
+      end
       @jira_reporter = node_tag.attribute('reporter').to_s
     end
     def jira_marker
@@ -320,6 +324,12 @@ module JiraMigration
     end
     def red_updated_on
       Time.parse(self.jira_updated)
+    end
+    # def red_start_date
+    #   Time.parse(self.jira_created)
+    # end
+    def red_due_date
+      Time.parse(self.jira_resolutiondate) if self.jira_resolutiondate
     end
     def red_status
       name = $MIGRATED_ISSUE_STATUS_BY_ID[self.jira_status]
