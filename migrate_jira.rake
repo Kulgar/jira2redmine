@@ -2,7 +2,7 @@ require 'rexml/document'
 require 'active_record'
 require 'yaml'
 require 'fileutils'
-require File.expand_path('../../../config/environment', __FILE__) # Assumes that migrate_jira.rake is in lib/tasks/
+#require File.expand_path('../../../config/environment', __FILE__) # Assumes that migrate_jira.rake is in lib/tasks/
 
 
 
@@ -56,6 +56,8 @@ module JiraMigration
   $MIGRATED_ISSUE_TYPES_BY_ID = {} 
   $MIGRATED_ISSUE_STATUS_BY_ID = {}
   $MIGRATED_ISSUE_PRIORITIES_BY_ID = {}
+
+  $IGNORED_PROJECTS = ['Edumaster']
 
   def self.get_all_options()
     # return all options 
@@ -650,6 +652,7 @@ namespace :jira_migration do
   desc "Migrates Jira Projects to Redmine Projects"
   task :migrate_projects => :environment do
     projects = JiraMigration.parse_projects()
+    projects.reject!{|project|$IGNORED_PROJECTS.include?(project.red_name)}
     projects.each do |p|
       #pp(p)
       p.migrate
@@ -673,6 +676,7 @@ desc "Migrates Jira Users to Redmine Users"
   desc "Migrates Jira Issues to Redmine Issues"
   task :migrate_issues => :environment do
     issues = JiraMigration.parse_issues()
+    issues.reject!{|issue|issue.red_project.nil?}
     issues.each do |i|
       #pp(i)
 
@@ -687,6 +691,7 @@ desc "Migrates Jira Users to Redmine Users"
   desc "Migrates Jira Issues Comments to Redmine Issues Journals (Notes)"
   task :migrate_comments => :environment do
     comments = JiraMigration.parse_comments()
+    comments.reject!{|comment|comment.red_journalized.nil?}
     comments.each do |c|
       #pp(c)
       c.migrate
@@ -701,6 +706,7 @@ desc "Migrates Jira Users to Redmine Users"
   desc "Migrates Jira Issues Attachments to Redmine Attachments"
   task :migrate_attachments => :environment do
     attachs = JiraMigration.parse_attachments()
+    attachs.reject!{|attach|attach.red_container.nil?}
     attachs.each do |a|
       #pp(c)
       a.migrate
