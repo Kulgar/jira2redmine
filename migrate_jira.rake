@@ -189,7 +189,7 @@ module JiraMigration
   end
 
   class JiraUser < BaseJira
-    attr_accessor :jira_userKey
+  attr_accessor :jira_firstName, :jira_lastName, :jira_emailAddress, :jira_name
 
       
     DEST_MODEL = User
@@ -226,7 +226,8 @@ module JiraMigration
       "#{self.jira_userKey}@infiniteloop.eu"
     end
     def red_password
-      self.jira_userKey
+    self.jira_password
+    
     end
     def red_login
       self.jira_userKey
@@ -449,22 +450,19 @@ module JiraMigration
 
     # For users in Redmine we need:
     # First Name, Last Name, E-mail, Password
-    # In Jira, the fullname and email are property (a little more hard to get)
-    #
-    # We need to parse the following XML elements:
-    # <OSUser id="123" name="john" passwordHash="asdf..."/>
-    #
-    # <OSPropertyEntry id="234" entityName="OSUser" entityId="123" propertyKey="fullName" type="5"/>
-    # <OSPropertyString id="234" values="John Smith"
-    #
-    # <OSPropertyEntry id="345" entityName="OSUser" entityId="123" propertyKey="email" type="5"/>
-    # <OSPropertyString id="345" value="john.smith@gmail.com"/>
+    #<User id="110" directoryId="1" userName="userName" lowerUserName="username" active="1" createdDate="2013-08-14 13:07:57.734" updatedDate="2013-09-29 21:52:19.776" firstName="firstName" lowerFirstName="firstname" lastName="lastName" lowerLastName="lastname" displayName="User Name" lowerDisplayName="user name" emailAddress="user@mail.org" lowerEmailAddress="user@mail.org" credential="" externalId=""/>
 
-    $doc.elements.each('/*/ApplicationUser') do |node|
+    $doc.elements.each('/*/User') do |node|
       user = JiraUser.new(node)
 
+      # Set user names (first name, last name)      
+      user.jira_firstName = node.attributes["firstName"]
+      user.jira_lastName = node.attributes["lastName"]
+      
       # Set email address
-      user.jira_userKey = node.attribute('userKey').to_s
+      user.jira_emailAddress = node.attributes["emailAddress"]
+
+      user.jira_name = node.attributes["lowerUserName"]
 
       users.push(user)
       puts "Found JIRA user: #{user.jira_userKey}"
