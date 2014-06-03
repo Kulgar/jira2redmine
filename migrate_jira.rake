@@ -7,7 +7,7 @@ require File.expand_path('../../../config/environment', __FILE__) # Assumes that
 module JiraMigration
   include REXML
 
-  file = File.new('backup_jira.xml')
+  file = File.new('entities.xml')
   doc = Document.new file
   $doc = doc
 
@@ -201,7 +201,7 @@ module JiraMigration
 
     def retrieve
       # Check mail address first, as it is more likely to match across systems
-      user = self.class::DEST_MODEL.find_by_mail(self.jira_userKey)
+      user = self.class::DEST_MODEL.find_by_mail(self.jira_emailAddress)
       if !user
         user = self.class::DEST_MODEL.find_by_login(self.jira_name)
       end
@@ -211,26 +211,26 @@ module JiraMigration
 
     def migrate
       super
-      $MIGRATED_USERS_BY_NAME[self.jira_userKey] = self.new_record
+      $MIGRATED_USERS_BY_NAME[self.jira_emailAddress] = self.new_record
     end
 
     # First Name, Last Name, E-mail, Password
     # here is the tranformation of Jira attributes in Redmine attribues
     def red_firstname()
-      self.jira_userKey
+      self.jira_firstName
     end
     def red_lastname
-      self.jira_userKey
+      self.jira_lastName
     end
     def red_mail
-      "#{self.jira_userKey}@infiniteloop.eu"
+      self.jira_emailAddress
     end
     def red_password
-    self.jira_password
+    "password"
     
     end
     def red_login
-      self.jira_userKey
+      self.jira_name
     end
     def before_save(new_record)
       new_record.login = red_login
@@ -465,7 +465,7 @@ module JiraMigration
       user.jira_name = node.attributes["lowerUserName"]
 
       users.push(user)
-      puts "Found JIRA user: #{user.jira_userKey}"
+      puts "Found JIRA user: #{user.jira_name}"
     end
 
     return users
@@ -734,7 +734,7 @@ desc "Migrates Jira Users to Redmine Users"
 
   desc "Just pretty print Jira Users on screen"
   task :test_parse_users => :environment do
-    users = JiraMigration.parse_users()
+    users = JiraMigration.parse_jira_users()
     users.each {|u| pp( u.run_all_redmine_fields) }
   end
 
