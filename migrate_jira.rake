@@ -27,7 +27,7 @@ module JiraMigration
   end
 
   $doc.elements.each("/*/Issue") do |i|
-    $MAP_ISSUE_TO_PROJECT_KEY[i.attributes["id"]] = { project_key: $MAP_PROJECT_ID_TO_PROJECT_KEY[i.attributes["project"]], issue_key: i.attributes['key']}
+    $MAP_ISSUE_TO_PROJECT_KEY[i.attributes["id"]] = { :project_key => $MAP_PROJECT_ID_TO_PROJECT_KEY[i.attributes["project"]], :issue_key => i.attributes['key']}
   end
 
   def self.retrieve_or_create_ghost_user
