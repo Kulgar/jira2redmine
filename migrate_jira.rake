@@ -3,32 +3,26 @@ require 'active_record'
 require 'yaml'
 require 'fileutils'
 require File.expand_path('../../../config/environment', __FILE__) # Assumes that migrate_jira.rake is in lib/tasks/
+require 'byebug'
 
 module JiraMigration
-  include REXML
+  #include REXML
+  include Nokogiri
 
-  file = File.new('entities.xml')
-  doc = Document.new file
-  $doc = doc
+  $doc = nil
 
   CONF_FILE = "map_jira_to_redmine.yml"
 
-  JIRA_ATTACHMENTS_DIR = "jira_attachments"
+  ENTITIES_FILE = "/Users/Nikolai/Downloads/JIRA-backup-20141115/entities.xml"
 
-  $MIGRATED_USERS_BY_NAME = Hash[User.all.map{|u|[u.login, u]}] #{} # Maps the Jira username to the Redmine Rails User object
+  JIRA_ATTACHMENTS_DIR = "/Users/Nikolai/Downloads/JIRA-backup-20141115/attachments"
+
+  $MIGRATED_USERS_BY_NAME = {} #Hash[User.all.map{|u|[u.login, u]}] #{} # Maps the Jira username to the Redmine Rails User object
 
   # those maps are for parsing attachments optimisation. My jira xml was huge ~7MB, and parsing it for each attachment lasted for ever. 
   # Now needed data are parsed once and put into those maps, which makes all things much faster.
   $MAP_ISSUE_TO_PROJECT_KEY = {}
   $MAP_PROJECT_ID_TO_PROJECT_KEY = {}
-
-  $doc.elements.each("/*/Project") do |p|
-    $MAP_PROJECT_ID_TO_PROJECT_KEY[p.attributes['id']] = p.attributes['key']
-  end
-
-  $doc.elements.each("/*/Issue") do |i|
-    $MAP_ISSUE_TO_PROJECT_KEY[i.attributes["id"]] = { :project_key => $MAP_PROJECT_ID_TO_PROJECT_KEY[i.attributes["project"]], :issue_key => i.attributes['key']}
-  end
 
   def self.retrieve_or_create_ghost_user
     ghost = User.find_by_login('deleted-user')
@@ -78,6 +72,10 @@ module JiraMigration
     $GHOST_USER
   end
 
+  def self.find_version_by_jira_id(jira_id)
+
+  end
+
   def self.find_user_by_jira_name(jira_name)
     user = $MIGRATED_USERS_BY_NAME[jira_name]
     if user.nil?
@@ -91,7 +89,11 @@ module JiraMigration
   def self.get_list_from_tag(xpath_query)
     # Get a tag node and get all attributes as a hash
     ret = []
-    $doc.elements.each(xpath_query) {|node| ret.push(node.attributes.rehash)}
+    # $doc.elements.each(xpath_query) {|node| ret.push(node.attributes.rehash)}
+    $doc.xpath(xpath_query).each {|node|
+      nm = node.attr("name")
+      ret.push(Hash[node.attributes.map { |k,v| [k,v.content]}])}
+      #ret.push(node.attributes.rehash)}
 
     return ret
   end
@@ -112,7 +114,7 @@ module JiraMigration
     def method_missing(key, *args)
       if key.to_s.start_with?("jira_")
         attr = key.to_s.sub("jira_", "")
-        return @tag.attributes[attr]
+        return @tag[attr]
       end
       puts "Method missing: #{key}"
       raise NoMethodError key
@@ -157,11 +159,46 @@ module JiraMigration
     end
   end
 
+  class JiraVersion < BaseJira
+    DEST_MODEL = Version
+    MAP = {}
+
+    def jira_marker
+      return "FROM JIRA: \"#{$MAP_PROJECT_ID_TO_PROJECT_KEY[self.jira_project]}\":https://glorium.jira.com/browse/#{$MAP_PROJECT_ID_TO_PROJECT_KEY[self.jira_project]}\n"
+    end
+
+    def retrieve
+      self.class::DEST_MODEL.find_by_name(self.jira_name)
+    end
+
+    def red_project
+      # needs to return the Rails Project object
+      proj = self.jira_project
+      JiraProject::MAP[proj]
+    end
+
+    def red_name
+      self.jira_name
+    end
+
+    def red_description
+      self.jira_description
+    end
+
+    def red_due_date
+      if self.jira_releasedate
+        Time.parse(self.jira_releasedate)
+      end
+    end
+
+  end
+
   class JiraProject < BaseJira
     DEST_MODEL = Project
     MAP = {}
 
     def retrieve
+
       self.class::DEST_MODEL.find_by_identifier(self.red_identifier)
     end
     def post_migrate(new_record)
@@ -245,7 +282,7 @@ module JiraMigration
       super
       # get a body from a comment
       # comment can have the comment body as a attribute or as a child tag
-      @jira_body = @tag.attributes["body"] || @tag.elements["body"].text
+      @jira_body = @tag["body"] || @tag.at("body").text
     end
 
     def jira_marker
@@ -287,15 +324,15 @@ module JiraMigration
 
     def initialize(node_tag)
       super
-      if @tag.elements["description"]
-        @jira_description = @tag.elements["description"].text
-      elsif @tag.attributes['description']
-        @jira_description = @tag.attributes["description"]
+      if @tag.at("description")
+        @jira_description = @tag.at("description").text
+      elsif @tag['description']
+        @jira_description = @tag["description"]
       end
       @jira_reporter = node_tag.attribute('reporter').to_s
     end
     def jira_marker
-      return "FROM JIRA: \"#{self.jira_key}\":https://infiniteloop.atlassian.net/browse/#{self.jira_key}\n"
+      return "FROM JIRA: \"#{self.jira_key}\":https://glorium.jira.com/browse/#{self.jira_key}\n"
     end
     def retrieve
       Issue.first(:conditions => "description LIKE '#{self.jira_marker}%'")
@@ -306,6 +343,18 @@ module JiraMigration
       proj = self.jira_project
       JiraProject::MAP[proj]
     end
+
+    def red_fixed_version
+      path = "/*/NodeAssociation[@sourceNodeId=\"#{self.jira_id}\" and @sourceNodeEntity=\"Issue\" and @sinkNodeEntity=\"Version\" and @associationType=\"IssueFixVersion\"]"
+      assocs = JiraMigration.get_list_from_tag(path)
+      versions = []
+      assocs.each do |assoc|
+        version = JiraVersion::MAP[assoc["sinkNodeId"]]
+        versions.push(version)
+      end
+      versions.last
+    end
+
     def red_subject
       #:subject => encode(issue.title[0, limit_for(Issue, 'subject')]),
       self.jira_summary
@@ -424,13 +473,26 @@ module JiraMigration
   end
 
 
+
+  def self.parse_versions()
+    ret = []
+    # $doc.elements.each('/*/Action[@type="comment"]') do |node|
+    $doc.xpath('/*/Version').each do |node|
+      comment = JiraVersion.new(node)
+      ret.push(comment)
+    end
+    return ret
+  end
+
+
   def self.parse_projects()
     # PROJECTS:
     # for project we need (identifies, name and description)
     # in exported data we have name and key, in Redmine name and descr. will be equal
     # the key will be the identifier
     projs = []
-    $doc.elements.each('/*/Project') do |node|
+    # $doc.elements.each('/*/Project') do |node|
+    $doc.xpath('/*/Project').each do |node|
       proj = JiraProject.new(node)
       projs.push(proj)
     end
@@ -452,17 +514,18 @@ module JiraMigration
     # First Name, Last Name, E-mail, Password
     #<User id="110" directoryId="1" userName="userName" lowerUserName="username" active="1" createdDate="2013-08-14 13:07:57.734" updatedDate="2013-09-29 21:52:19.776" firstName="firstName" lowerFirstName="firstname" lastName="lastName" lowerLastName="lastname" displayName="User Name" lowerDisplayName="user name" emailAddress="user@mail.org" lowerEmailAddress="user@mail.org" credential="" externalId=""/>
 
-    $doc.elements.each('/*/User') do |node|
+    # $doc.elements.each('/*/User') do |node|
+    $doc.xpath('/*/User').each do |node|
       user = JiraUser.new(node)
 
       # Set user names (first name, last name)      
-      user.jira_firstName = node.attributes["firstName"]
-      user.jira_lastName = node.attributes["lastName"]
+      user.jira_firstName = node["firstName"]
+      user.jira_lastName = node["lastName"]
       
       # Set email address
-      user.jira_emailAddress = node.attributes["emailAddress"]
+      user.jira_emailAddress = node["emailAddress"]
 
-      user.jira_name = node.attributes["lowerUserName"]
+      user.jira_name = node["lowerUserName"]
 
       users.push(user)
       puts "Found JIRA user: #{user.jira_name}"
@@ -480,6 +543,10 @@ module JiraMigration
     "New Feature" => "Feature",  # A new feature of the product.
     "Task" => "Task",            # A task that needs to be done.
     "Custom Issue" => "Support", # A custom issue type, as defined by your organisation if required.
+    "Story" => "Story",
+    "Epic" => "Epic",
+    "Technical task" => "Task",
+    "QA task" => "Task",
   }
   def self.get_jira_issue_types()
     # Issue Type
@@ -502,6 +569,7 @@ module JiraMigration
     "Resolved" => "Resolved",       # A Resolution has been identified or implemented, and this issue is awaiting verification by the reporter. From here, issues are either 'Reopened' or are 'Closed'.
     "Reopened" => "Assigned",       # This issue was once 'Resolved' or 'Closed', but is now being re-examined. (For example, an issue with a Resolution of 'Cannot Reproduce' is Reopened when more information becomes available and the issue becomes reproducible). From here, issues are either marked In Progress, Resolved or Closed.
     "Closed" => "Closed",           # This issue is complete. ## Be careful to choose one which a "issue closed" attribute marked :-)
+    "" => "",
   }
   def self.get_jira_status()
     # Issue Status
@@ -537,7 +605,8 @@ module JiraMigration
 
   def self.parse_comments()
     ret = []
-    $doc.elements.each('/*/Action[@type="comment"]') do |node|
+    # $doc.elements.each('/*/Action[@type="comment"]') do |node|
+    $doc.xpath('/*/Action[@type="comment"]').each do |node|
       comment = JiraComment.new(node)
       ret.push(comment)
     end
@@ -547,7 +616,8 @@ module JiraMigration
   def self.parse_issues()
     ret = []
 
-    $doc.elements.collect('/*/Issue'){|i|i}.sort{|a,b|a.attribute('key').to_s<=>b.attribute('key').to_s}.each do |node|
+    # $doc.elements.collect('/*/Issue'){|i|i}.sort{|a,b|a.attribute('key').to_s<=>b.attribute('key').to_s}.each do |node|
+    $doc.xpath('/*/Issue').collect{|i|i}.sort{|a,b|a.attribute('key').to_s<=>b.attribute('key').to_s}.each do |node|
       issue = JiraIssue.new(node)
       ret.push(issue)
     end
@@ -556,7 +626,8 @@ module JiraMigration
 
   def self.parse_attachments()
     attachs = []
-    $doc.elements.each('/*/FileAttachment') do |node|
+    # $doc.elements.each('/*/FileAttachment') do |node|
+    $doc.xpath('/*/FileAttachment').each do |node|
       attach = JiraAttachment.new(node)
       attachs.push(attach)
     end
@@ -595,6 +666,24 @@ namespace :jira_migration do
 
   desc "Gets the configuration from YAML"
   task :pre_conf => :environment do
+
+    file = File.new(JiraMigration::ENTITIES_FILE)
+    # doc = REXML::Document.new(file)
+    doc = Nokogiri::XML(file)
+    $doc = doc
+
+    $MIGRATED_USERS_BY_NAME = Hash[User.all.map{|u|[u.login, u]}] #{} # Maps the Jira username to the Redmine Rails User object
+
+    # $doc.elements.each("/*/Project") do |p|
+    $doc.xpath("/*/Project").each do |p|
+      $MAP_PROJECT_ID_TO_PROJECT_KEY[p['id']] = p['key']
+    end
+
+    #$doc.elements.each("/*/Issue") do |i|
+    $doc.xpath("/*/Issue").each do |i|
+      $MAP_ISSUE_TO_PROJECT_KEY[i["id"]] = { :project_key => $MAP_PROJECT_ID_TO_PROJECT_KEY[i["project"]], :issue_key => i['key']}
+    end
+
     conf_file = JiraMigration::CONF_FILE
     conf_exists = File.exists?(conf_file)
 
@@ -619,7 +708,8 @@ namespace :jira_migration do
                               :migrate_issue_types, 
                               :migrate_issue_status, 
                               :migrate_issue_priorities, 
-                              :migrate_projects, 
+                              :migrate_projects,
+                              :migrate_versions,
                               :migrate_users, 
                               :migrate_issues, 
                               :migrate_comments, 
@@ -722,6 +812,15 @@ desc "Migrates Jira Users to Redmine Users"
     attachs.each do |a|
       #pp(c)
       a.migrate
+    end
+  end
+
+  desc "Migrates Jira Versions to Redmine Versions"
+  task :migrate_versions => :environment do
+    versions = JiraMigration.parse_versions()
+    versions.reject!{|version|version.red_project.nil?}
+    versions.each do |i|
+      i.migrate
     end
   end
 
