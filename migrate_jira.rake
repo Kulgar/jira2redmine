@@ -11,11 +11,13 @@ module JiraMigration
 
 
   ############## Configuration mapping file. Maps Jira Entities to Redmine Entities. Generated on the first run.
-  CONF_FILE = "map_jira_to_redmine.yml"
+  CONF_FILE = 'map_jira_to_redmine.yml'
   ############## Jira backup main xml file with all data
-  ENTITIES_FILE = "/Users/Nikolai/Downloads/JIRA-backup-20150303/entities.xml"
+  ENTITIES_FILE = '/Users/Nikolai/Downloads/JIRA-backup-20150303/entities.xml'
   ############## Location of jira attachements
-  JIRA_ATTACHMENTS_DIR = "/Users/Nikolai/Downloads/JIRA-backup-20150303/data/attachments"
+  JIRA_ATTACHMENTS_DIR = '/Users/Nikolai/Downloads/JIRA-backup-20150303/data/attachments'
+  ############## Jira URL
+  $JIRA_WEB_URL = 'https://glorium.jira.com'
 
   class BaseJira
     attr_reader :tag
@@ -183,7 +185,7 @@ module JiraMigration
     MAP = {}
 
     def jira_marker
-      return "FROM JIRA: \"#{$MAP_PROJECT_ID_TO_PROJECT_KEY[self.jira_project]}\":https://glorium.jira.com/browse/#{$MAP_PROJECT_ID_TO_PROJECT_KEY[self.jira_project]}\n"
+      return "FROM JIRA: \"#{$MAP_PROJECT_ID_TO_PROJECT_KEY[self.jira_project]}\":#{$JIRA_WEB_URL}/browse/#{$MAP_PROJECT_ID_TO_PROJECT_KEY[self.jira_project]}\n"
     end
 
     def retrieve
@@ -231,7 +233,7 @@ module JiraMigration
       @jira_reporter = node_tag.attribute('reporter').to_s
     end
     def jira_marker
-      return "FROM JIRA: \"#{self.jira_key}\":https://glorium.jira.com/browse/#{self.jira_key}\n"
+      return "FROM JIRA: \"#{self.jira_key}\":#{$JIRA_WEB_URL}/browse/#{self.jira_key}\n"
     end
     def retrieve
       Issue.first(:conditions => "description LIKE '#{self.jira_marker}%'")
@@ -992,7 +994,7 @@ namespace :jira_migration do
 
     ##################################### Running all tasks ##########################################
     desc "Run all parsers!"
-    task :do_all_migrations => [:environment, :pre_conf,
+    task :do_all_migrations, [:args1, :args2] => [:environment, :pre_conf,
                                 :migrate_issue_types,
                                 :migrate_issue_status,
                                 :migrate_issue_priorities,
