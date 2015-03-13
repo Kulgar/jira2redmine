@@ -994,7 +994,7 @@ namespace :jira_migration do
 
     ##################################### Running all tasks ##########################################
     desc "Run all parsers!"
-    task :do_all_migrations, [:args1, :args2] => [:environment, :pre_conf,
+    task :do_all_migrations => [:environment, :pre_conf,
                                 :migrate_issue_types,
                                 :migrate_issue_status,
                                 :migrate_issue_priorities,
