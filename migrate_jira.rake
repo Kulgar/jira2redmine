@@ -236,7 +236,7 @@ module JiraMigration
       return "FROM JIRA: \"#{self.jira_key}\":#{$JIRA_WEB_URL}/browse/#{self.jira_key}\n"
     end
     def retrieve
-      Issue.first(:conditions => "description LIKE '#{self.jira_marker}%'")
+      Issue.where(description: "LIKE '#{self.jira_marker}%'").first()
     end
 
     def red_project
@@ -570,7 +570,9 @@ module JiraMigration
       end
       group = Group.find_by_lastname(m['lowerParentName'])
       if !user.nil? and !group.nil?
-        group.users << user
+        if !group.users.exists?(user.id)
+         group.users << user
+        end
       end
     end
 
@@ -853,7 +855,10 @@ namespace :jira_migration do
       groups = JiraMigration.get_list_from_tag('/*/Group')
       groups.each do |group|
         #pp(u)
-        group = Group.find_or_create_by_lastname(group['lowerGroupName'])
+        group = Group.find_by_lastname(group['lowerGroupName'])
+        if group.nil?
+          group = Group.new(lastname: group['lowerGroupName'])
+        end
         group.save!
       end
       puts "Migrated Groups"
@@ -870,7 +875,10 @@ namespace :jira_migration do
       JiraMigration.get_jira_issue_types()
       types = $confs["types"]
       types.each do |key, value|
-        t = Tracker.find_or_create_by_name(value)
+        t = Tracker.find_by_name(value)
+        if t.nil?
+          Tracker.new(name: value)
+        end
         t.save!
         t.reload
         $MIGRATED_ISSUE_TYPES[key] = t
@@ -883,7 +891,10 @@ namespace :jira_migration do
       JiraMigration.get_jira_statuses()
       status = $confs["status"]
       status.each do |key, value|
-        s = IssueStatus.find_or_create_by_name(value)
+        s = IssueStatus.find_by_name(value)
+        if s.nil?
+          s = IssueStatus.new(name: value)
+        end
         s.save!
         s.reload
         $MIGRATED_ISSUE_STATUS[key] = s
@@ -897,7 +908,10 @@ namespace :jira_migration do
       priorities = $confs["priorities"]
 
       priorities.each do |key, value|
-        p = IssuePriority.find_or_create_by_name(value)
+        p = IssuePriority.find_by_name(value)
+        if p.nil?
+          p = IssuePriority.new(name: value)
+        end
         p.save!
         p.reload
         $MIGRATED_ISSUE_PRIORITIES[key] = p
