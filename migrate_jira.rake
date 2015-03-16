@@ -855,11 +855,11 @@ namespace :jira_migration do
       groups = JiraMigration.get_list_from_tag('/*/Group')
       groups.each do |group|
         #pp(u)
-        group = Group.find_by_lastname(group['lowerGroupName'])
-        if group.nil?
-          group = Group.new(lastname: group['lowerGroupName'])
+        g = Group.find_by_lastname(group['lowerGroupName'])
+        if g.nil?
+          g = Group.new(lastname: group['lowerGroupName'])
         end
-        group.save!
+        g.save!
       end
       puts "Migrated Groups"
 
