@@ -121,9 +121,6 @@ module JiraMigration
     def red_mail
       self.jira_emailAddress
     end
-    def red_password
-      "Pa$$w0rd"
-    end
     def red_login
       self.jira_name
     end
@@ -132,6 +129,7 @@ module JiraMigration
     end
     def post_migrate(new_record)
       new_record.salt_password('Pa$$w0rd')
+      new_record.save!
       new_record.update_column(:must_change_passwd, true)
     end
   end
@@ -170,7 +168,7 @@ module JiraMigration
           new_record.trackers << issue_type
         end
       end
-      new_record.is_public = false
+      new_record.update_column(:is_public, false)
 
     end
 
