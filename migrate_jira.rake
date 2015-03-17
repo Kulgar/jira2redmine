@@ -131,7 +131,7 @@ module JiraMigration
       new_record.login = red_login
     end
     def post_migrate(new_record)
-      new_record.salt_password("Pa$$w0rd")
+      new_record.salt_password('Pa$$w0rd')
       new_record.update_column(:must_change_passwd, true)
     end
   end
