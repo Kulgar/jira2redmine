@@ -58,7 +58,7 @@ module JiraMigration
 
     def migrate
       all_fields = self.run_all_redmine_fields()
-      #pp("Saving:", all_fields)
+      pp("Saving:", all_fields)
       record = self.retrieve
       if record
         record.update_attributes(all_fields)
@@ -131,6 +131,7 @@ module JiraMigration
       new_record.salt_password('Pa$$w0rd')
       new_record.save!
       new_record.update_column(:must_change_passwd, true)
+      new_record.reload
     end
   end
 
@@ -169,7 +170,7 @@ module JiraMigration
         end
       end
       new_record.update_column(:is_public, false)
-
+      new_record.reload
     end
 
     # here is the tranformation of Jira attributes in Redmine attribues
@@ -312,8 +313,6 @@ module JiraMigration
       end
     end
     def post_migrate(new_record)
-      # require 'pry'
-      # binding.pry
       new_record.update_column :updated_on, Time.parse(self.jira_updated)
       new_record.update_column :created_on, Time.parse(self.jira_created)
       new_record.reload
@@ -602,10 +601,10 @@ module JiraMigration
       issue_to = JiraIssue::MAP[link['destination']]
       if linktype.downcase == 'subtask'
         issue_to.parent_issue_id = issue_from.id
-        issue_to.save!
+        pp issue_to unless issue_to.save!
       elsif linktype.downcase == 'epic-story'
         issue_to.parent_issue_id = issue_from.id
-        issue_to.save!
+        pp issue_to unless issue_to.save!
       else
         r = IssueRelation.new(:relation_type => linktype, :issue_from => issue_from, :issue_to => issue_to)
         pp r unless r.save!
