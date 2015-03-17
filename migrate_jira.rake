@@ -4,7 +4,7 @@ require 'yaml'
 require 'fileutils'
 require File.expand_path('../../../../config/environment', __FILE__) # Assumes that migrate_jira.rake is in lib/tasks/
 
-require 'byebug'
+# require 'byebug'
 
 module JiraMigration
   include Nokogiri
@@ -593,7 +593,6 @@ module JiraMigration
       migrated_issue_link_types[linktype['id']] = DEFAULT_ISSUELINK_TYPE_MAP.fetch(linktype['linkname'], ISSUELINK_TYPE_MARKER)
     end
 
-    byebug
     # Set Issue Links
     issue_links = self.get_list_from_tag('/*/IssueLink')
     issue_links.each do |link|
@@ -614,7 +613,6 @@ module JiraMigration
 
   def self.migrate_worktime()
 
-    byebug
     # Set Issue Links
     worklogs = self.get_list_from_tag('/*/Worklog')
     worklogs.each do |log|
