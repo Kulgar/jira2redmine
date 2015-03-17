@@ -601,9 +601,11 @@ module JiraMigration
       issue_from = JiraIssue::MAP[link['source']]
       issue_to = JiraIssue::MAP[link['destination']]
       if linktype.downcase == 'subtask'
-        issue_to.update_attribute(:parent_issue_id, issue_from.id)
+        issue_to.parent_issue_id = issue_from.id
+        issue_to.save!
       elsif linktype.downcase == 'epic-story'
-        issue_to.update_attribute(:parent_issue_id, issue_from.id)
+        issue_to.parent_issue_id = issue_from.id
+        issue_to.save!
       else
         r = IssueRelation.new(:relation_type => linktype, :issue_from => issue_from, :issue_to => issue_to)
         pp r unless r.save!
