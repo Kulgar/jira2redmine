@@ -2,7 +2,7 @@ require 'rexml/document'
 require 'active_record'
 require 'yaml'
 require 'fileutils'
-require File.expand_path('../../../config/environment', __FILE__) # Assumes that migrate_jira.rake is in lib/tasks/
+require File.expand_path('../../../../config/environment', __FILE__) # Assumes that migrate_jira.rake is in lib/tasks/
 
 require 'byebug'
 
@@ -14,10 +14,13 @@ module JiraMigration
   CONF_FILE = 'map_jira_to_redmine.yml'
   ############## Jira backup main xml file with all data
   ENTITIES_FILE = '/Users/Nikolai/Downloads/JIRA-backup-20150303/entities.xml'
+  #ENTITIES_FILE = '/home/ubuntu/JIRA-backup-20150303/entities.xml'
   ############## Location of jira attachements
   JIRA_ATTACHMENTS_DIR = '/Users/Nikolai/Downloads/JIRA-backup-20150303/data/attachments'
+  #JIRA_ATTACHMENTS_DIR = '/home/ubuntu/JIRA-backup-20150303/data/attachments'
   ############## Jira URL
   $JIRA_WEB_URL = 'https://glorium.jira.com'
+  #$JIRA_WEB_URL = 'https://leasepipeline.atlassian.net'
 
   class BaseJira
     attr_reader :tag
@@ -126,6 +129,10 @@ module JiraMigration
     end
     def before_save(new_record)
       new_record.login = red_login
+    end
+    def post_migrate(new_record)
+      new_record.salt_password("Pa$$w0rd")
+      new_record.update_column(:must_change_passwd, true)
     end
   end
 
@@ -842,7 +849,7 @@ namespace :jira_migration do
         user = User.find_by_mail(u.jira_emailAddress)
         if user.nil?
           new_user = u.migrate
-          new_user.update_attribute :must_change_passwd, true
+          #new_user.update_attribute :must_change_passwd, true
         end
       end
 
