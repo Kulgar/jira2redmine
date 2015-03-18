@@ -573,7 +573,6 @@ module JiraMigration
 
     path = "/*/NodeAssociation[@sourceNodeEntity=\"Issue\" and @sinkNodeEntity=\"Version\" and @associationType=\"IssueFixVersion\"]"
     associations = JiraMigration.get_list_from_tag(path)
-    versions = []
     associations.each do |assoc|
       version = JiraVersion::MAP[assoc['sinkNodeId']]
       issue = JiraIssue::MAP[assoc['sourceNodeId']]
