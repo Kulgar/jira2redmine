@@ -597,7 +597,7 @@ module JiraMigration
     memberships.each do |m|
       user = User.find_by_login(m['lowerChildName'])
       if user.nil? or user == $GHOST_USER
-        users = self.get_list_from_tag("/*/User[@lowerUserName=%s]" % m['lowerChildName'])
+        users = self.get_list_from_tag("/*/User[@lowerUserName=\"%s\"]" % m['lowerChildName'])
         if !users.nil? and !users.empty?
           user = User.find_by_mail(users[0]['emailAddress'])
         end
