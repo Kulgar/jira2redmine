@@ -27,7 +27,7 @@ module JiraMigration
     MAP = {}
 
     attr_reader :tag
-    attr_accessor :new_record
+    attr_accessor :new_record, :is_new
 
     def map
       self.class::MAP
@@ -66,6 +66,7 @@ module JiraMigration
         record.update_attributes(all_fields)
       else
         record = self.class::DEST_MODEL.new all_fields
+        self.is_new = true
       end
       if self.respond_to?('before_save')
         self.before_save(record)
@@ -76,7 +77,7 @@ module JiraMigration
       self.map[self.jira_id] = record
       self.new_record = record
       if self.respond_to?('post_migrate')
-        self.post_migrate(record)
+        self.post_migrate(record, self.is_new)
       end
       record.reload
       return record
@@ -109,7 +110,7 @@ module JiraMigration
 
     def migrate
       super
-      $MIGRATED_USERS_BY_NAME[self.jira_emailAddress] = self.new_record
+      $MIGRATED_USERS_BY_NAME[self.jira_name] = self.new_record
     end
 
     # First Name, Last Name, E-mail, Password
@@ -128,12 +129,15 @@ module JiraMigration
     end
     def before_save(new_record)
       new_record.login = red_login
+      if new_record.new_record?
+        new_record.salt_password('Pa$$w0rd')
+      end
     end
-    def post_migrate(new_record)
-      new_record.salt_password('Pa$$w0rd')
-      new_record.save!
-      new_record.update_column(:must_change_passwd, true)
-      new_record.reload
+    def post_migrate(new_record, is_new)
+      if is_new
+        new_record.update_attribute(:must_change_passwd, true)
+        new_record.reload
+      end
     end
   end
 
@@ -146,7 +150,7 @@ module JiraMigration
     end
 
     def retrieve
-      group = self.class::DEST_MODEL.find_by_login(self.jira_lowerGroupName)
+      group = self.class::DEST_MODEL.find_by_lastname(self.jira_lowerGroupName)
     end
 
     def red_name
@@ -162,7 +166,7 @@ module JiraMigration
 
       self.class::DEST_MODEL.find_by_identifier(self.red_identifier)
     end
-    def post_migrate(new_record)
+    def post_migrate(new_record, is_new)
       if !new_record.module_enabled?('issue_tracking')
         new_record.enabled_modules << EnabledModule.new(:name => 'issue_tracking')
       end
@@ -232,12 +236,13 @@ module JiraMigration
 
     def initialize(node_tag)
       super
-      if @tag.at("description")
-        @jira_description = @tag.at("description").text
-      elsif @tag['description']
-        @jira_description = @tag["description"]
-      end
-      @jira_reporter = node_tag.attribute('reporter').to_s
+      #if @tag.at("description")
+      #  @jira_description = @tag.at("description").text
+      #elsif @tag['description']
+      #  @jira_description = @tag["description"]
+      #end
+      @jira_description = node_tag['description'].to_s
+      @jira_reporter = node_tag['reporter'].to_s
     end
     def jira_marker
       return "FROM JIRA: \"#{self.jira_key}\":#{$JIRA_WEB_URL}/browse/#{self.jira_key}\n"
@@ -251,6 +256,7 @@ module JiraMigration
       JiraProject::MAP[self.jira_project]
     end
 
+=begin
     def red_fixed_version
       path = "/*/NodeAssociation[@sourceNodeId=\"#{self.jira_id}\" and @sourceNodeEntity=\"Issue\" and @sinkNodeEntity=\"Version\" and @associationType=\"IssueFixVersion\"]"
       assocs = JiraMigration.get_list_from_tag(path)
@@ -261,19 +267,20 @@ module JiraMigration
       end
       versions.last
     end
+=end
 
     def red_subject
-      #:subject => encode(issue.title[0, limit_for(Issue, 'subject')]),
       self.jira_summary
     end
     def red_description
-      dsc = self.jira_marker + "\n"
-      if @jira_description
-        dsc += @jira_description
-      else
-        dsc += self.red_subject
-      end
-      return dsc
+      "#{self.jira_marker} \n%s" % @jira_description
+      #dsc = self.jira_marker + "\n"
+      #if @jira_description
+      #  dsc += @jira_description
+      #else
+      #  dsc += self.red_subject
+      #end
+      #return dsc
     end
     def red_priority
       name = $MIGRATED_ISSUE_PRIORITIES_BY_ID[self.jira_priority]
@@ -312,7 +319,7 @@ module JiraMigration
         nil
       end
     end
-    def post_migrate(new_record)
+    def post_migrate(new_record, is_new)
       new_record.update_column :updated_on, Time.parse(self.jira_updated)
       new_record.update_column :created_on, Time.parse(self.jira_created)
       new_record.reload
@@ -328,7 +335,8 @@ module JiraMigration
       super
       # get a body from a comment
       # comment can have the comment body as a attribute or as a child tag
-      @jira_body = @tag["body"] || @tag.at("body").text
+      #@jira_body = @tag["body"] || @tag.at("body").text
+      @jira_body = node['body']
     end
 
     def jira_marker
@@ -340,7 +348,8 @@ module JiraMigration
 
     # here is the tranformation of Jira attributes in Redmine attribues
     def red_notes
-      self.jira_marker + "\n" + @jira_body
+      #self.jira_marker + "\n" + @jira_body
+      "#{self.jira_marker}\n%s" % @jira_body
     end
     def red_created_on
       DateTime.parse(self.jira_created)
@@ -353,7 +362,7 @@ module JiraMigration
       # retrieving the Rails object
       JiraIssue::MAP[self.jira_issue]
     end
-    def post_migrate(new_record)
+    def post_migrate(new_record, is_new)
       new_record.update_column :created_on, Time.parse(self.jira_created)
       new_record.reload
     end
@@ -420,7 +429,7 @@ module JiraMigration
     def red_container
       JiraIssue::MAP[self.jira_issue]
     end
-    def post_migrate(new_record)
+    def post_migrate(new_record, is_new)
       new_record.update_column :created_on, Time.parse(self.jira_created)
       new_record.reload
     end
@@ -576,11 +585,9 @@ module JiraMigration
     associations.each do |assoc|
       version = JiraVersion::MAP[assoc['sinkNodeId']]
       issue = JiraIssue::MAP[assoc['sourceNodeId']]
-      if issue.fixed_version.due_date < version.due_date
-        issue.fixed_version = version
-      end
+      issue.update_column(:fixed_version_id, version.id)
+      issue.reload
     end
-
   end
 
   def self.migrate_membership()
@@ -619,13 +626,13 @@ module JiraMigration
     issue_links = self.get_list_from_tag('/*/IssueLink')
     issue_links.each do |link|
       linktype = migrated_issue_link_types[link['linktype']]
-      pp('Creating Issue Link:', link)
       issue_from = JiraIssue::MAP[link['source']]
       issue_to = JiraIssue::MAP[link['destination']]
       if linktype.downcase == 'subtask' or linktype.downcase == 'epic-story'
-        pp "Set Parent#{issue_from.id} to:", issue_to
-        issue_to.parent_issue_id = issue_from.id
-        issue_to.save!
+        pp "Set Parent #{issue_from.id} to:", issue_to
+        updated_on = issue_to.updated_on
+        issue_to.update_attribute(:parent_issue_id, issue_from.id)
+        issue_to.update_column :updated_on, updated_on
         issue_to.reload
         issue_from.reload
       else
@@ -974,6 +981,7 @@ namespace :jira_migration do
         i.migrate
       end
 
+      JiraMigration.migrate_fixed_versions
       JiraMigration.migrate_issue_links
       JiraMigration.migrate_worktime
 
