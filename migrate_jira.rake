@@ -23,9 +23,11 @@ module JiraMigration
   #$JIRA_WEB_URL = 'https://leasepipeline.atlassian.net'
 
   class BaseJira
+
+    MAP = {}
+
     attr_reader :tag
     attr_accessor :new_record
-    MAP = {}
 
     def map
       self.class::MAP
@@ -36,8 +38,8 @@ module JiraMigration
     end
 
     def method_missing(key, *args)
-      if key.to_s.start_with?("jira_")
-        attr = key.to_s.sub("jira_", "")
+      if key.to_s.start_with?('jira_')
+        attr = key.to_s.sub('jira_', '')
         return @tag[attr]
       end
       puts "Method missing: #{key}"
@@ -48,8 +50,8 @@ module JiraMigration
       ret = {}
       self.methods.each do |method_name|
         m = method_name.to_s
-        if m.start_with?("red_")
-          mm = m.to_s.sub("red_", "")
+        if m.start_with?('red_')
+          mm = m.to_s.sub('red_', '')
           ret[mm] = self.send(m)
         end
       end
@@ -58,14 +60,14 @@ module JiraMigration
 
     def migrate
       all_fields = self.run_all_redmine_fields()
-      pp("Saving:", all_fields)
+      #pp('Saving:', all_fields)
       record = self.retrieve
       if record
         record.update_attributes(all_fields)
       else
         record = self.class::DEST_MODEL.new all_fields
       end
-      if self.respond_to?("before_save")
+      if self.respond_to?('before_save')
         self.before_save(record)
       end
 
@@ -73,7 +75,7 @@ module JiraMigration
       record.reload
       self.map[self.jira_id] = record
       self.new_record = record
-      if self.respond_to?("post_migrate")
+      if self.respond_to?('post_migrate')
         self.post_migrate(record)
       end
       record.reload
@@ -85,11 +87,11 @@ module JiraMigration
   end
 
   class JiraUser < BaseJira
-    attr_accessor  :jira_emailAddress, :jira_name #:jira_firstName, :jira_lastName
-
 
     DEST_MODEL = User
     MAP = {}
+
+    attr_accessor  :jira_emailAddress, :jira_name
 
     def initialize(node)
       super
@@ -187,6 +189,7 @@ module JiraMigration
   end
 
   class JiraVersion < BaseJira
+
     DEST_MODEL = Version
     MAP = {}
 
@@ -200,8 +203,7 @@ module JiraMigration
 
     def red_project
       # needs to return the Rails Project object
-      proj = self.jira_project
-      JiraProject::MAP[proj]
+      JiraProject::MAP[self.jira_project]
     end
 
     def red_name
@@ -221,11 +223,10 @@ module JiraMigration
   end
 
   class JiraIssue < BaseJira
+
     DEST_MODEL = Issue
     MAP = {}
-    # attr_reader :jira_id, :jira_key, :jira_project, :jira_reporter,
-    # :jira_type, :jira_summary, :jira_assignee, :jira_priority,
-    # :jira_resolution, :jira_status, :jira_created, :jira_resolutiondate
+
     attr_reader  :jira_description, :jira_reporter
 
 
@@ -247,8 +248,7 @@ module JiraMigration
 
     def red_project
       # needs to return the Rails Project object
-      proj = self.jira_project
-      JiraProject::MAP[proj]
+      JiraProject::MAP[self.jira_project]
     end
 
     def red_fixed_version
@@ -320,6 +320,7 @@ module JiraMigration
   end
 
   class JiraComment < BaseJira
+
     DEST_MODEL = Journal
     MAP = {}
 
@@ -334,7 +335,7 @@ module JiraMigration
       return "FROM JIRA: #{self.jira_id}\n"
     end
     def retrieve
-      Journal.first(:conditions => "notes LIKE '#{self.jira_marker}%'")
+      Journal.where(notes: "LIKE '#{self.jira_marker}%'").first()
     end
 
     # here is the tranformation of Jira attributes in Redmine attribues
@@ -359,12 +360,14 @@ module JiraMigration
   end
 
   class JiraAttachment < BaseJira
+
     DEST_MODEL = Attachment
     MAP = {}
 
     def retrieve
       nil
     end
+
     def before_save(new_record)
       new_record.container = self.red_container
       pp(new_record)
@@ -442,7 +445,11 @@ module JiraMigration
       "Bug" => "Bug",              # A problem which impairs or prevents the functions of the product.
       "Improvement" => "Feature",  # An enhancement to an existing feature.
       "New Feature" => "Feature",  # A new feature of the product.
+      "Epic" => "Feature",            # A task that needs to be done.
+      "Story" => "Feature",            # A task that needs to be done.
       "Task" => "Feature",            # A task that needs to be done.
+      "Technical task" => "Feature",            # A task that needs to be done.
+      "QA task" => "Feature",            # A task that needs to be done.
       "Custom Issue" => "Support" # A custom issue type, as defined by your organisation if required.
   }
 
@@ -454,14 +461,16 @@ module JiraMigration
       "In Progress" => "In Progress", # This issue is being actively worked on at the moment by the assignee.
       "Resolved" => "Resolved",       # A Resolution has been identified or implemented, and this issue is awaiting verification by the reporter. From here, issues are either 'Reopened' or are 'Closed'.
       "Reopened" => "New",       # This issue was once 'Resolved' or 'Closed', but is now being re-examined. (For example, an issue with a Resolution of 'Cannot Reproduce' is Reopened when more information becomes available and the issue becomes reproducible). From here, issues are either marked In Progress, Resolved or Closed.
-      "Closed" => "Closed"           # This issue is complete. ## Be careful to choose one which a "issue closed" attribute marked :-)
+      "Closed" => "Closed",           # This issue is complete. ## Be careful to choose one which a "issue closed" attribute marked :-)
+      "In Test" => "In Test",
+      "Verified" => "Verified"
   }
 
   ISSUE_PRIORITY_MARKER = "(choose a Redmine Enumeration Issue Priority)"
   DEFAULT_ISSUE_PRIORITY_MAP = {
       # Default map from Jira (key) to Redmine (value)
       # the comments on right side are Jira definitions - http://confluence.atlassian.com/display/JIRA/What+is+an+Issue#
-      "Blocker" => "Immediate", # Highest priority. Indicates that this issue takes precedence over all others.
+      "Blocker" => "Blocker", # Highest priority. Indicates that this issue takes precedence over all others.
       "Critical" => "Urgent",   # Indicates that this issue is causing a problem and requires urgent attention.
       "Major" => "High",        # Indicates that this issue has a significant impact.
       "Minor" => "Normal",      # Indicates that this issue has a relatively minor impact.
@@ -599,15 +608,12 @@ module JiraMigration
       pp('Creating Issue Link:', link)
       issue_from = JiraIssue::MAP[link['source']]
       issue_to = JiraIssue::MAP[link['destination']]
-      if linktype.downcase == 'subtask'
-        issue_to.parent_issue_id = issue_from.id
-        pp issue_to unless issue_to.save!
-      elsif linktype.downcase == 'epic-story'
-        issue_to.parent_issue_id = issue_from.id
-        pp issue_to unless issue_to.save!
+      if linktype.downcase == 'subtask' or linktype.downcase == 'epic-story'
+        issue_to.update_column(:parent_issue_id, issue_from.id)
+        issue_to.reload
       else
         r = IssueRelation.new(:relation_type => linktype, :issue_from => issue_from, :issue_to => issue_to)
-        pp r unless r.save!
+        r.save!
       end
     end
   end
