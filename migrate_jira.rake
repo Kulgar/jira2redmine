@@ -13,10 +13,10 @@ module JiraMigration
   ############## Configuration mapping file. Maps Jira Entities to Redmine Entities. Generated on the first run.
   CONF_FILE = 'map_jira_to_redmine.yml'
   ############## Jira backup main xml file with all data
-  ENTITIES_FILE = '/Users/Nikolai/Downloads/JIRA-backup-20150303/entities.xml'
+  ENTITIES_FILE = '/Users/Nikolai/Downloads/JIRA-backup-20150316/entities.xml'
   #ENTITIES_FILE = '/home/ubuntu/JIRA-backup-20150303/entities.xml'
   ############## Location of jira attachements
-  JIRA_ATTACHMENTS_DIR = '/Users/Nikolai/Downloads/JIRA-backup-20150303/data/attachments'
+  JIRA_ATTACHMENTS_DIR = '/Users/Nikolai/Downloads/JIRA-backup-20150316/data/attachments'
   #JIRA_ATTACHMENTS_DIR = '/home/ubuntu/JIRA-backup-20150303/data/attachments'
   ############## Jira URL
   $JIRA_WEB_URL = 'https://glorium.jira.com'
@@ -630,10 +630,12 @@ module JiraMigration
       issue_to = JiraIssue::MAP[link['destination']]
       if linktype.downcase == 'subtask' or linktype.downcase == 'epic-story'
         pp "Set Parent #{issue_from.id} to:", issue_to
-        updated_on = issue_to.updated_on
+        to_updated_on = issue_to.updated_on
+        from_updated_on = issue_from.updated_on
         issue_to.update_attribute(:parent_issue_id, issue_from.id)
         issue_to.reload
-        issue_to.update_column :updated_on, updated_on
+        issue_to.update_column :updated_on, to_updated_on
+        issue_from.update_column :updated_on, from_updated_on
         issue_to.reload
         issue_from.reload
       else
