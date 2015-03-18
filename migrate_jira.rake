@@ -632,6 +632,7 @@ module JiraMigration
         pp "Set Parent #{issue_from.id} to:", issue_to
         updated_on = issue_to.updated_on
         issue_to.update_attribute(:parent_issue_id, issue_from.id)
+        issue_to.reload
         issue_to.update_column :updated_on, updated_on
         issue_to.reload
         issue_from.reload
