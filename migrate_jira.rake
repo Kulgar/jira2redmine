@@ -569,6 +569,21 @@ module JiraMigration
     return ret
   end
 
+  def self.migrate_fixed_versions()
+
+    path = "/*/NodeAssociation[@sourceNodeEntity=\"Issue\" and @sinkNodeEntity=\"Version\" and @associationType=\"IssueFixVersion\"]"
+    associations = JiraMigration.get_list_from_tag(path)
+    versions = []
+    associations.each do |assoc|
+      version = JiraVersion::MAP[assoc['sinkNodeId']]
+      issue = JiraIssue::MAP[assoc['sourceNodeId']]
+      if issue.fixed_version.due_date < version.due_date
+        issue.fixed_version = version
+      end
+    end
+
+  end
+
   def self.migrate_membership()
 
     memberships = self.get_list_from_tag('/*/Membership[@membershipType="GROUP_USER"]')
@@ -609,11 +624,15 @@ module JiraMigration
       issue_from = JiraIssue::MAP[link['source']]
       issue_to = JiraIssue::MAP[link['destination']]
       if linktype.downcase == 'subtask' or linktype.downcase == 'epic-story'
-        issue_to.update_column(:parent_issue_id, issue_from.id)
+        pp "Set Parent#{issue_from.id} to:", issue_to
+        issue_to.parent_issue_id = issue_from.id
+        issue_to.save!
         issue_to.reload
+        issue_from.reload
       else
         r = IssueRelation.new(:relation_type => linktype, :issue_from => issue_from, :issue_to => issue_to)
         r.save!
+        r.reload
       end
     end
   end
@@ -870,6 +889,7 @@ namespace :jira_migration do
           g = Group.new(lastname: group['lowerGroupName'])
         end
         g.save!
+        g.reload
       end
       puts "Migrated Groups"
 
