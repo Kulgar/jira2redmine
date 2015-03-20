@@ -13,10 +13,10 @@ module JiraMigration
   ############## Configuration mapping file. Maps Jira Entities to Redmine Entities. Generated on the first run.
   CONF_FILE = 'map_jira_to_redmine.yml'
   ############## Jira backup main xml file with all data
-  ENTITIES_FILE = '/Users/Nikolai/Downloads/JIRA-backup-20150316/entities.xml'
+  ENTITIES_FILE = '/Users/Nikolai/Downloads/JIRA-backup-20150319/entities.xml'
   #ENTITIES_FILE = '/home/ubuntu/JIRA-backup-20150303/entities.xml'
   ############## Location of jira attachements
-  JIRA_ATTACHMENTS_DIR = '/Users/Nikolai/Downloads/JIRA-backup-20150316/data/attachments'
+  JIRA_ATTACHMENTS_DIR = '/Users/Nikolai/Downloads/JIRA-backup-20150319/data/attachments'
   #JIRA_ATTACHMENTS_DIR = '/home/ubuntu/JIRA-backup-20150303/data/attachments'
   ############## Jira URL
   $JIRA_WEB_URL = 'https://glorium.jira.com'
@@ -236,19 +236,20 @@ module JiraMigration
 
     def initialize(node_tag)
       super
-      #if @tag.at("description")
-      #  @jira_description = @tag.at("description").text
+      if @tag.at('description')
+        @jira_description = @tag.at('description').text
       #elsif @tag['description']
-      #  @jira_description = @tag["description"]
-      #end
-      @jira_description = node_tag['description'].to_s
+      else
+        @jira_description = @tag['description']
+      end
+      #@jira_description = node_tag['description'].to_s
       @jira_reporter = node_tag['reporter'].to_s
     end
     def jira_marker
-      return "FROM JIRA: \"#{self.jira_key}\":#{$JIRA_WEB_URL}/browse/#{self.jira_key}\n"
+      return "FROM JIRA: \"#{self.jira_key}\":#{$JIRA_WEB_URL}/browse/#{self.jira_key}"
     end
     def retrieve
-      Issue.where(description: "LIKE '#{self.jira_marker}%'").first()
+      Issue.where("description Like '#{self.jira_marker}%'").first()
     end
 
     def red_project
@@ -273,7 +274,7 @@ module JiraMigration
       self.jira_summary
     end
     def red_description
-      "#{self.jira_marker} \n%s" % @jira_description
+      "#{self.jira_marker}\n%s" % @jira_description
       #dsc = self.jira_marker + "\n"
       #if @jira_description
       #  dsc += @jira_description
@@ -340,7 +341,7 @@ module JiraMigration
     end
 
     def jira_marker
-      return "FROM JIRA: #{self.jira_id}\n"
+      return "FROM JIRA: #{self.jira_id}"
     end
     def retrieve
       Journal.where(notes: "LIKE '#{self.jira_marker}%'").first()
