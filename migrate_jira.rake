@@ -2,7 +2,7 @@ require 'rexml/document'
 require 'active_record'
 require 'yaml'
 require 'fileutils'
-require File.expand_path('../../../../config/environment', __FILE__) # Assumes that migrate_jira.rake is in lib/tasks/
+require File.expand_path('../../../config/environment', __FILE__) # Assumes that migrate_jira.rake is in lib/tasks/
 
 # require 'byebug'
 
@@ -13,10 +13,9 @@ module JiraMigration
   ############## Configuration mapping file. Maps Jira Entities to Redmine Entities. Generated on the first run.
   CONF_FILE = 'map_jira_to_redmine.yml'
   ############## Jira backup main xml file with all data
-  ENTITIES_FILE = '/Users/Nikolai/Downloads/JIRA-backup-20150319/entities.xml'
-  #ENTITIES_FILE = '/home/ubuntu/JIRA-backup-20150303/entities.xml'
+  ENTITIES_FILE = 'entities.xml'
   ############## Location of jira attachements
-  JIRA_ATTACHMENTS_DIR = '/Users/Nikolai/Downloads/JIRA-backup-20150319/data/attachments'
+  JIRA_ATTACHMENTS_DIR = 'attachments'
   #JIRA_ATTACHMENTS_DIR = '/home/ubuntu/JIRA-backup-20150303/data/attachments'
   ############## Jira URL
   $JIRA_WEB_URL = 'https://glorium.jira.com'
