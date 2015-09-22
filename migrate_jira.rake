@@ -382,13 +382,15 @@ module JiraMigration
       pp(new_record)
 
       # JIRA stores attachments as follows:
-      # <PROJECTKEY>/<ISSUE-KEY>/<ATTACHMENT_ID>_filename.ext
+      # <PROJECTKEY>/<PROJECT-ID/<ISSUE-KEY>/<ATTACHMENT_ID>_filename.ext
       #
       # We have to recreate this path in order to copy the file
       issue_key = $MAP_ISSUE_TO_PROJECT_KEY[self.jira_issue][:issue_key]
       project_key = $MAP_ISSUE_TO_PROJECT_KEY[self.jira_issue][:project_key]
+      project_id = $MAP_ISSUE_TO_PROJECT_KEY[self.jira_issue][:project_id]
       jira_attachment_file = File.join(JIRA_ATTACHMENTS_DIR,
                                        project_key,
+                                       project_id,
                                        issue_key,
                                        "#{self.jira_id}")
       puts "Jira Attachment File: #{jira_attachment_file}"
@@ -832,7 +834,7 @@ namespace :jira_migration do
 
       #$doc.elements.each("/*/Issue") do |i|
       $doc.xpath("/*/Issue").each do |i|
-        $MAP_ISSUE_TO_PROJECT_KEY[i["id"]] = { :project_key => $MAP_PROJECT_ID_TO_PROJECT_KEY[i["project"]], :issue_key => i['key']}
+        $MAP_ISSUE_TO_PROJECT_KEY[i["id"]] = { :project_id => i["project"], :project_key => $MAP_PROJECT_ID_TO_PROJECT_KEY[i["project"]], :issue_key => i['key']}
       end
 
     end
