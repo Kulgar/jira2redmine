@@ -333,9 +333,9 @@ module JiraMigration
     def initialize(node)
       super
       # get a body from a comment
-      # comment can have the comment body as a attribute or as a child tag
-      #@jira_body = @tag["body"] || @tag.at("body").text
-      @jira_body = node['body']
+      # comment can have the comment body as a attribute or as a child tag      
+      @jira_body = @tag["body"] || @tag.at("body").text
+      #@jira_body = node['body']
     end
 
     def jira_marker
@@ -347,8 +347,9 @@ module JiraMigration
 
     # here is the tranformation of Jira attributes in Redmine attribues
     def red_notes
+      # You can have the marker in the notes, if you want. Else only the body will be migrated
       #self.jira_marker + "\n" + @jira_body
-      "#{self.jira_marker}\n%s" % @jira_body
+      @jira_body
     end
     def red_created_on
       DateTime.parse(self.jira_created)
