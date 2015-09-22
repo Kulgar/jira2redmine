@@ -1036,13 +1036,20 @@ namespace :jira_migration do
       issues.each {|i| pp( i.run_all_redmine_fields) }
     end
 
+    desc "Just pretty print Jira Attachments on screen"
+    task :test_parse_attachments => :environment do
+      attachments = JiraMigration.parse_attachments()
+      attachments.each {|i| pp( i.run_all_redmine_fields) }
+    end
+
     ##################################### Running all tests ##########################################
     desc "Tests all parsers!"
     task :test_all_migrations => [:environment, :pre_conf,
                                   :test_parse_projects,
                                   :test_parse_users,
                                   :test_parse_comments,
-                                  :test_parse_issues] do
+                                  :test_parse_issues,
+                                  :test_parse_attachments] do
       puts "All parsers was run! :-)"
     end
 
