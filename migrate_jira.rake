@@ -13,13 +13,12 @@ module JiraMigration
   ############## Configuration mapping file. Maps Jira Entities to Redmine Entities. Generated on the first run.
   CONF_FILE = 'map_jira_to_redmine.yml'
   ############## Jira backup main xml file with all data
-  ENTITIES_FILE = 'entities.xml'
+  ENTITIES_FILE = 'tmp/JIRA-backup-20150922/entities.xml'
   ############## Location of jira attachements
-  JIRA_ATTACHMENTS_DIR = 'attachments'
-  #JIRA_ATTACHMENTS_DIR = '/home/ubuntu/JIRA-backup-20150303/data/attachments'
+  JIRA_ATTACHMENTS_DIR = 'tmp/JIRA-backup-20150922/data/attachments'
   ############## Jira URL
-  $JIRA_WEB_URL = 'https://glorium.jira.com'
-  #$JIRA_WEB_URL = 'https://leasepipeline.atlassian.net'
+  $JIRA_WEB_URL = 'https://companyurl.atlassian.net'
+
 
   class BaseJira
 
