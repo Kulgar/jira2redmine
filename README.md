@@ -19,9 +19,11 @@ Unzip the Jira backup file into `tmp`
 
 Change the variables in top of the file to reflect the backup files
 
+```
   ENTITIES_FILE = 'tmp/JIRA-backup-XXXXXXXX/entities.xml'
   JIRA_ATTACHMENTS_DIR = 'tmp/JIRA-backup-XXXXXXXX/data/attachments'
   $JIRA_WEB_URL = 'https://<unix-url>.atlassian.net'
+```
 
 and the execute the following:
 
