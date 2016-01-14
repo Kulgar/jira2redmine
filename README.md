@@ -1,7 +1,5 @@
-<h1>This project is looking for a new maintainer</h1>
-I don't have the time, and worse, the incentive, to maintain this project anymore.
-
-If you are interested in taking over, please contact me personally.
+<h1>New maintainer</h1>
+I will do my best to continue maintaining this project. :)
 
 
 jira2redmine
