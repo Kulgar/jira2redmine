@@ -270,7 +270,11 @@ module JiraMigration
 =end
 
     def red_subject
-      self.jira_summary
+        if self.jira_summary.nil?
+          return "jira blank summary"
+        else
+          return self.jira_summary
+        end
     end
     def red_description
       "#{self.jira_marker}\n%s" % @jira_description
