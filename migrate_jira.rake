@@ -13,11 +13,11 @@ module JiraMigration
   ############## Configuration mapping file. Maps Jira Entities to Redmine Entities. Generated on the first run.
   CONF_FILE = 'map_jira_to_redmine.yml'
   ############## Jira backup main xml file with all data
-  ENTITIES_FILE = 'tmp/JIRA-backup-20150922/entities.xml'
+  ENTITIES_FILE = 'entities.xml'
   ############## Location of jira attachements
-  JIRA_ATTACHMENTS_DIR = 'tmp/JIRA-backup-20150922/data/attachments'
+  JIRA_ATTACHMENTS_DIR = 'data/attachments'
   ############## Jira URL
-  $JIRA_WEB_URL = 'https://companyurl.atlassian.net'
+  $JIRA_WEB_URL = 'https://unitedofoq.atlassian.net'
 
 
   class BaseJira
@@ -72,11 +72,15 @@ module JiraMigration
 
       record.save!
       record.reload
+	  puts "after save"
+	  
       self.map[self.jira_id] = record
       self.new_record = record
       if self.respond_to?('post_migrate')
         self.post_migrate(record, self.is_new)
       end
+	  puts "after migrate"
+	  
       record.reload
       return record
     end
@@ -255,7 +259,7 @@ module JiraMigration
       JiraProject::MAP[self.jira_project]
     end
 
-=begin
+begin
     def red_fixed_version
       path = "/*/NodeAssociation[@sourceNodeId=\"#{self.jira_id}\" and @sourceNodeEntity=\"Issue\" and @sinkNodeEntity=\"Version\" and @associationType=\"IssueFixVersion\"]"
       assocs = JiraMigration.get_list_from_tag(path)
@@ -266,7 +270,8 @@ module JiraMigration
       end
       versions.last
     end
-=end
+end
+
 
     def red_subject
       self.jira_summary
@@ -576,7 +581,6 @@ module JiraMigration
       nm = node.attr("name")
       ret.push(Hash[node.attributes.map { |k,v| [k,v.content]}])}
       #ret.push(node.attributes.rehash)}
-
     return ret
   end
 
@@ -642,8 +646,14 @@ module JiraMigration
         issue_from.reload
       else
         r = IssueRelation.new(:relation_type => linktype, :issue_from => issue_from, :issue_to => issue_to)
-        r.save!
-        r.reload
+		puts "setting relation between: #{issue_from.id} to: #{issue_to.id}"
+		begin
+			r.save!
+			r.reload
+		rescue Exception => e
+			puts "FAILED setting #{linktype} relation from: #{issue_from.id} to: #{issue_to.id} because of #{e.message}"
+		end
+		puts "After saving the relation"
       end
     end
   end
@@ -757,10 +767,13 @@ module JiraMigration
     # the key will be the identifier
     projs = []
     # $doc.elements.each('/*/Project') do |node|
+	puts "before"
     $doc.xpath('/*/Project').each do |node|
       proj = JiraProject.new(node)
       projs.push(proj)
     end
+	puts "after"
+	puts projs.length()
 
     migrated_projects = {}
     projs.each do |p|
@@ -920,6 +933,8 @@ namespace :jira_migration do
         if t.nil?
           Tracker.new(name: value)
         end
+		puts "key: " + key
+		puts "value: " + value
         t.save!
         t.reload
         $MIGRATED_ISSUE_TYPES[key] = t
@@ -936,6 +951,8 @@ namespace :jira_migration do
         if s.nil?
           s = IssueStatus.new(name: value)
         end
+		puts "key: " + key
+		puts "value: " + value
         s.save!
         s.reload
         $MIGRATED_ISSUE_STATUS[key] = s
@@ -953,6 +970,8 @@ namespace :jira_migration do
         if p.nil?
           p = IssuePriority.new(name: value)
         end
+		puts "key: " + key
+		puts "value: " + value
         p.save!
         p.reload
         $MIGRATED_ISSUE_PRIORITIES[key] = p
@@ -1016,7 +1035,9 @@ namespace :jira_migration do
     ##################################### Tests ##########################################
     desc "Just pretty print Jira Projects on screen"
     task :test_parse_projects => :environment do
+	  puts "before parse projects"
       projects = JiraMigration.parse_projects()
+	  puts "these are the projects: "
       projects.each {|p| pp(p.run_all_redmine_fields) }
     end
 
