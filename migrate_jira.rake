@@ -17,7 +17,7 @@ module JiraMigration
   ############## Location of jira attachements
   JIRA_ATTACHMENTS_DIR = 'data/attachments'
   ############## Jira URL
-  $JIRA_WEB_URL = 'https://unitedofoq.atlassian.net'
+  $JIRA_WEB_URL = 'https://company.atlassian.net'
 
 
   class BaseJira
@@ -72,14 +72,12 @@ module JiraMigration
 
       record.save!
       record.reload
-	  puts "after save"
-	  
+
       self.map[self.jira_id] = record
       self.new_record = record
       if self.respond_to?('post_migrate')
         self.post_migrate(record, self.is_new)
       end
-	  puts "after migrate"
 	  
       record.reload
       return record
@@ -129,6 +127,13 @@ module JiraMigration
     def red_login
       self.jira_name
     end
+	def red_status
+	  if (self.jira_active.to_s == '1')
+	    return 1 
+	  else
+	    return 3 #locked user
+	  end
+	end
     def before_save(new_record)
       new_record.login = red_login
       if new_record.new_record?
@@ -259,7 +264,6 @@ module JiraMigration
       JiraProject::MAP[self.jira_project]
     end
 
-begin
     def red_fixed_version
       path = "/*/NodeAssociation[@sourceNodeId=\"#{self.jira_id}\" and @sourceNodeEntity=\"Issue\" and @sinkNodeEntity=\"Version\" and @associationType=\"IssueFixVersion\"]"
       assocs = JiraMigration.get_list_from_tag(path)
@@ -270,14 +274,63 @@ begin
       end
       versions.last
     end
-end
-
+	
+	def get_change_groups_of_issue(issueId)
+	  path = "/*/ChangeGroup[@issue=\"#{issueId}\"]/@id"
+      groupIdAtts = $doc.xpath(path)
+      groupIds = []
+      groupIdAtts.each do |item|
+        groupIds.push(item.content)
+      end
+	  return groupIds
+	end  
+	
+	def get_sprint_changes_of_specific_group(groupId)
+	  path = "/*/ChangeItem[@group=\"#{groupId}\" and @fieldtype=\"custom\" and @field=\"Sprint\"]/@newstring"
+	  sprintAttributes = $doc.xpath(path)
+      sprints = []
+	  latestSprint = ""
+      sprintAttributes.each do |item|		
+	    if (item.content.length != 0)
+		  latestSprint = item.content
+		end  
+      end
+	  
+	  return latestSprint 
+	end
+	
+	def get_previous_sprints
+	  groupIds = get_change_groups_of_issue(self.jira_id)
+	  sprints = []
+	  selected = ""
+	  currentSprint = ""
+	  groupIds.each do |item|
+	    if (item != nil and item.to_s != '')
+		  currentSprint = get_sprint_changes_of_specific_group(item)
+		  if (currentSprint.length !=0)
+		    selected = currentSprint
+		  end
+		  sprints.push(currentSprint)
+		end  
+	  end
+	  
+	  #puts("This is the jira id: #{self.jira_id} and this is the selected sprint: #{selected} out of: #{sprints}")	  
+	  
+	  return selected
+    end
 
     def red_subject
       self.jira_summary
     end
+	
     def red_description
-      "#{self.jira_marker}\n%s" % @jira_description
+	  sprints = get_previous_sprints
+	  if (sprints.to_s == '')
+	    dsc = "#{self.jira_marker}\n%s" % @jira_description
+	  else
+	    dsc = "#{self.jira_marker}\n Sprints: #{get_previous_sprints}\n\n%s" % @jira_description 
+      end	
+      return dsc	  
       #dsc = self.jira_marker + "\n"
       #if @jira_description
       #  dsc += @jira_description
@@ -286,6 +339,7 @@ end
       #end
       #return dsc
     end
+
     def red_priority
       name = $MIGRATED_ISSUE_PRIORITIES_BY_ID[self.jira_priority]
       return $MIGRATED_ISSUE_PRIORITIES[name]
@@ -723,20 +777,13 @@ end
     # $doc.elements.each('/*/User') do |node|
     $doc.xpath('/*/User').each do |node|
       if(node['emailAddress'] =~ /\A([^@\s]+)@((?:[-a-z0-9]+\.)+[a-z]{2,})\z/i)
-        if !node['firstName'].to_s.empty? and !node['lastName'].to_s.empty? and node['active'].to_s == '1'
-          user = JiraUser.new(node)
-
-          # Set user names (first name, last name)
-          #user.jira_firstName = node["firstName"]
-          #user.jira_lastName = node["lastName"]
-
-          # Set email address
-          user.jira_emailAddress = node["lowerEmailAddress"]
-
-          user.jira_name = node["lowerUserName"]
-
-          users.push(user)
-          puts "Found JIRA user: #{user.jira_name}"
+        if !node['firstName'].to_s.empty? and !node['lastName'].to_s.empty? 
+		  user = JiraUser.new(node)
+		  user.jira_emailAddress = node["lowerEmailAddress"]
+		  user.jira_name = node["lowerUserName"]
+		  user.jira_active = node['active']
+		  users.push(user)
+		  puts "Found JIRA user: #{user.jira_name}"
         end
       end
     end
@@ -767,13 +814,10 @@ end
     # the key will be the identifier
     projs = []
     # $doc.elements.each('/*/Project') do |node|
-	puts "before"
     $doc.xpath('/*/Project').each do |node|
       proj = JiraProject.new(node)
       projs.push(proj)
     end
-	puts "after"
-	puts projs.length()
 
     migrated_projects = {}
     projs.each do |p|
@@ -933,8 +977,6 @@ namespace :jira_migration do
         if t.nil?
           Tracker.new(name: value)
         end
-		puts "key: " + key
-		puts "value: " + value
         t.save!
         t.reload
         $MIGRATED_ISSUE_TYPES[key] = t
@@ -951,9 +993,7 @@ namespace :jira_migration do
         if s.nil?
           s = IssueStatus.new(name: value)
         end
-		puts "key: " + key
-		puts "value: " + value
-        s.save!
+		s.save!
         s.reload
         $MIGRATED_ISSUE_STATUS[key] = s
       end
@@ -1035,9 +1075,7 @@ namespace :jira_migration do
     ##################################### Tests ##########################################
     desc "Just pretty print Jira Projects on screen"
     task :test_parse_projects => :environment do
-	  puts "before parse projects"
       projects = JiraMigration.parse_projects()
-	  puts "these are the projects: "
       projects.each {|p| pp(p.run_all_redmine_fields) }
     end
 
@@ -1088,7 +1126,8 @@ namespace :jira_migration do
                                 :migrate_groups,
                                 :migrate_issues,
                                 :migrate_comments,
-                                :migrate_attachments] do
+                                :migrate_attachments
+								] do
       puts "All migrations done! :-)"
     end
 
