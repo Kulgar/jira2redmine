@@ -15,11 +15,10 @@ module JiraMigration
   ############## Jira backup main xml file with all data
   ENTITIES_FILE = 'entities.xml'
   ############## Location of jira attachements
-  JIRA_ATTACHMENTS_DIR = 'attachments'
-  #JIRA_ATTACHMENTS_DIR = '/home/ubuntu/JIRA-backup-20150303/data/attachments'
+  JIRA_ATTACHMENTS_DIR = 'data/attachments'
   ############## Jira URL
-  $JIRA_WEB_URL = 'https://glorium.jira.com'
-  #$JIRA_WEB_URL = 'https://leasepipeline.atlassian.net'
+  $JIRA_WEB_URL = 'https://company.atlassian.net'
+
 
   class BaseJira
 
@@ -73,11 +72,13 @@ module JiraMigration
 
       record.save!
       record.reload
+
       self.map[self.jira_id] = record
       self.new_record = record
       if self.respond_to?('post_migrate')
         self.post_migrate(record, self.is_new)
       end
+	  
       record.reload
       return record
     end
@@ -126,6 +127,13 @@ module JiraMigration
     def red_login
       self.jira_name
     end
+	def red_status
+	  if (self.jira_active.to_s == '1')
+	    return 1 
+	  else
+	    return 3 #locked user
+	  end
+	end
     def before_save(new_record)
       new_record.login = red_login
       if new_record.new_record?
@@ -256,7 +264,6 @@ module JiraMigration
       JiraProject::MAP[self.jira_project]
     end
 
-=begin
     def red_fixed_version
       path = "/*/NodeAssociation[@sourceNodeId=\"#{self.jira_id}\" and @sourceNodeEntity=\"Issue\" and @sinkNodeEntity=\"Version\" and @associationType=\"IssueFixVersion\"]"
       assocs = JiraMigration.get_list_from_tag(path)
@@ -267,7 +274,50 @@ module JiraMigration
       end
       versions.last
     end
-=end
+	
+	def get_change_groups_of_issue(issueId)
+	  path = "/*/ChangeGroup[@issue=\"#{issueId}\"]/@id"
+      groupIdAtts = $doc.xpath(path)
+      groupIds = []
+      groupIdAtts.each do |item|
+        groupIds.push(item.content)
+      end
+	  return groupIds
+	end  
+	
+	def get_sprint_changes_of_specific_group(groupId)
+	  path = "/*/ChangeItem[@group=\"#{groupId}\" and @fieldtype=\"custom\" and @field=\"Sprint\"]/@newstring"
+	  sprintAttributes = $doc.xpath(path)
+      sprints = []
+	  latestSprint = ""
+      sprintAttributes.each do |item|		
+	    if (item.content.length != 0)
+		  latestSprint = item.content
+		end  
+      end
+	  
+	  return latestSprint 
+	end
+	
+	def get_previous_sprints
+	  groupIds = get_change_groups_of_issue(self.jira_id)
+	  sprints = []
+	  selected = ""
+	  currentSprint = ""
+	  groupIds.each do |item|
+	    if (item != nil and item.to_s != '')
+		  currentSprint = get_sprint_changes_of_specific_group(item)
+		  if (currentSprint.length !=0)
+		    selected = currentSprint
+		  end
+		  sprints.push(currentSprint)
+		end  
+	  end
+	  
+	  #puts("This is the jira id: #{self.jira_id} and this is the selected sprint: #{selected} out of: #{sprints}")	  
+	  
+	  return selected
+    end
 
     def red_subject
         if self.jira_summary.nil?
@@ -276,8 +326,15 @@ module JiraMigration
           return self.jira_summary
         end
     end
+	
     def red_description
-      "#{self.jira_marker}\n%s" % @jira_description
+	  sprints = get_previous_sprints
+	  if (sprints.to_s == '')
+	    dsc = "#{self.jira_marker}\n%s" % @jira_description
+	  else
+	    dsc = "#{self.jira_marker}\n Sprints: #{get_previous_sprints}\n\n%s" % @jira_description 
+      end	
+      return dsc	  
       #dsc = self.jira_marker + "\n"
       #if @jira_description
       #  dsc += @jira_description
@@ -286,6 +343,7 @@ module JiraMigration
       #end
       #return dsc
     end
+
     def red_priority
       name = $MIGRATED_ISSUE_PRIORITIES_BY_ID[self.jira_priority]
       return $MIGRATED_ISSUE_PRIORITIES[name]
@@ -338,9 +396,9 @@ module JiraMigration
     def initialize(node)
       super
       # get a body from a comment
-      # comment can have the comment body as a attribute or as a child tag
-      #@jira_body = @tag["body"] || @tag.at("body").text
-      @jira_body = node['body']
+      # comment can have the comment body as a attribute or as a child tag      
+      @jira_body = @tag["body"] || @tag.at("body").text
+      #@jira_body = node['body']
     end
 
     def jira_marker
@@ -352,8 +410,9 @@ module JiraMigration
 
     # here is the tranformation of Jira attributes in Redmine attribues
     def red_notes
+      # You can have the marker in the notes, if you want. Else only the body will be migrated
       #self.jira_marker + "\n" + @jira_body
-      "#{self.jira_marker}\n%s" % @jira_body
+      @jira_body
     end
     def red_created_on
       DateTime.parse(self.jira_created)
@@ -386,13 +445,15 @@ module JiraMigration
       pp(new_record)
 
       # JIRA stores attachments as follows:
-      # <PROJECTKEY>/<ISSUE-KEY>/<ATTACHMENT_ID>_filename.ext
+      # <PROJECTKEY>/<PROJECT-ID/<ISSUE-KEY>/<ATTACHMENT_ID>_filename.ext
       #
       # We have to recreate this path in order to copy the file
       issue_key = $MAP_ISSUE_TO_PROJECT_KEY[self.jira_issue][:issue_key]
       project_key = $MAP_ISSUE_TO_PROJECT_KEY[self.jira_issue][:project_key]
+      project_id = $MAP_ISSUE_TO_PROJECT_KEY[self.jira_issue][:project_id]
       jira_attachment_file = File.join(JIRA_ATTACHMENTS_DIR,
                                        project_key,
+                                       project_id,
                                        issue_key,
                                        "#{self.jira_id}")
       puts "Jira Attachment File: #{jira_attachment_file}"
@@ -578,7 +639,6 @@ module JiraMigration
       nm = node.attr("name")
       ret.push(Hash[node.attributes.map { |k,v| [k,v.content]}])}
       #ret.push(node.attributes.rehash)}
-
     return ret
   end
 
@@ -644,8 +704,14 @@ module JiraMigration
         issue_from.reload
       else
         r = IssueRelation.new(:relation_type => linktype, :issue_from => issue_from, :issue_to => issue_to)
-        r.save!
-        r.reload
+		puts "setting relation between: #{issue_from.id} to: #{issue_to.id}"
+		begin
+			r.save!
+			r.reload
+		rescue Exception => e
+			puts "FAILED setting #{linktype} relation from: #{issue_from.id} to: #{issue_to.id} because of #{e.message}"
+		end
+		puts "After saving the relation"
       end
     end
   end
@@ -715,20 +781,13 @@ module JiraMigration
     # $doc.elements.each('/*/User') do |node|
     $doc.xpath('/*/User').each do |node|
       if(node['emailAddress'] =~ /\A([^@\s]+)@((?:[-a-z0-9]+\.)+[a-z]{2,})\z/i)
-        if !node['firstName'].to_s.empty? and !node['lastName'].to_s.empty? and node['active'].to_s == '1'
-          user = JiraUser.new(node)
-
-          # Set user names (first name, last name)
-          #user.jira_firstName = node["firstName"]
-          #user.jira_lastName = node["lastName"]
-
-          # Set email address
-          user.jira_emailAddress = node["lowerEmailAddress"]
-
-          user.jira_name = node["lowerUserName"]
-
-          users.push(user)
-          puts "Found JIRA user: #{user.jira_name}"
+        if !node['firstName'].to_s.empty? and !node['lastName'].to_s.empty? 
+		  user = JiraUser.new(node)
+		  user.jira_emailAddress = node["lowerEmailAddress"]
+		  user.jira_name = node["lowerUserName"]
+		  user.jira_active = node['active']
+		  users.push(user)
+		  puts "Found JIRA user: #{user.jira_name}"
         end
       end
     end
@@ -836,7 +895,7 @@ namespace :jira_migration do
 
       #$doc.elements.each("/*/Issue") do |i|
       $doc.xpath("/*/Issue").each do |i|
-        $MAP_ISSUE_TO_PROJECT_KEY[i["id"]] = { :project_key => $MAP_PROJECT_ID_TO_PROJECT_KEY[i["project"]], :issue_key => i['key']}
+        $MAP_ISSUE_TO_PROJECT_KEY[i["id"]] = { :project_id => i["project"], :project_key => $MAP_PROJECT_ID_TO_PROJECT_KEY[i["project"]], :issue_key => i['key']}
       end
 
     end
@@ -938,7 +997,7 @@ namespace :jira_migration do
         if s.nil?
           s = IssueStatus.new(name: value)
         end
-        s.save!
+		s.save!
         s.reload
         $MIGRATED_ISSUE_STATUS[key] = s
       end
@@ -955,6 +1014,8 @@ namespace :jira_migration do
         if p.nil?
           p = IssuePriority.new(name: value)
         end
+		puts "key: " + key
+		puts "value: " + value
         p.save!
         p.reload
         $MIGRATED_ISSUE_PRIORITIES[key] = p
@@ -1040,13 +1101,20 @@ namespace :jira_migration do
       issues.each {|i| pp( i.run_all_redmine_fields) }
     end
 
+    desc "Just pretty print Jira Attachments on screen"
+    task :test_parse_attachments => :environment do
+      attachments = JiraMigration.parse_attachments()
+      attachments.each {|i| pp( i.run_all_redmine_fields) }
+    end
+
     ##################################### Running all tests ##########################################
     desc "Tests all parsers!"
     task :test_all_migrations => [:environment, :pre_conf,
                                   :test_parse_projects,
                                   :test_parse_users,
                                   :test_parse_comments,
-                                  :test_parse_issues] do
+                                  :test_parse_issues,
+                                  :test_parse_attachments] do
       puts "All parsers was run! :-)"
     end
 
@@ -1062,7 +1130,8 @@ namespace :jira_migration do
                                 :migrate_groups,
                                 :migrate_issues,
                                 :migrate_comments,
-                                :migrate_attachments] do
+                                :migrate_attachments
+								] do
       puts "All migrations done! :-)"
     end
 
